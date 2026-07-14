@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ระบบบันทึกเอกสาร | บันทึกรายการ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --ink:#1B2430; --ink-soft:#5B6572; --ink-faint:#8B95A0;
+  --bg:#F2F5F4; --panel:#FFFFFF;
+  --navy:#16414F; --navy-dark:#0F2E38; --navy-tint:#E7EFEF;
+  --gold:#C99A3A; --gold-dark:#A87C22;
+  --green:#3F7D58; --green-tint:#E7F1EA;
+  --red:#B23A32; --red-tint:#FBEAE8;
+  --line:#E1E5E3;
+  --radius:14px;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans Thai',sans-serif;}
+h1,h2,h3,.display{font-family:'Kanit',sans-serif;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+.screen{display:none;}
+.screen.active{display:block;}
+
+/* ===== LOGIN ===== */
+#screen-login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--navy-dark),var(--navy) 70%);}
+.login-card{background:var(--panel);border-radius:20px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.25);}
+.login-mark{width:52px;height:52px;border-radius:12px;background:var(--gold);display:flex;align-items:center;justify-content:center;font-family:'Kanit';font-weight:800;font-size:22px;color:var(--navy-dark);margin-bottom:18px;}
+.login-card h1{font-size:22px;margin:0 0 4px;}
+.login-card p.sub{color:var(--ink-soft);margin:0 0 24px;font-size:14px;}
+.field{margin-bottom:16px;}
+.field label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;}
+.field input{width:100%;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;font-size:15px;}
+.field input:focus{outline:none;border-color:var(--navy);}
+.login-btn{width:100%;background:var(--navy);color:#fff;border:none;border-radius:10px;padding:14px;font-family:'Kanit';font-weight:700;font-size:16px;margin-top:6px;}
+.login-btn:active{background:var(--navy-dark);}
+.login-btn:disabled{opacity:.6;}
+.login-error{color:var(--red);font-size:13px;text-align:center;margin-top:12px;min-height:18px;}
+.login-hint{font-size:12px;color:var(--ink-faint);text-align:center;margin-top:16px;}
+
+/* ===== APP SHELL ===== */
+#screen-app .topbar{
+  background:var(--navy-dark);color:#fff;padding:0 24px;
+  display:flex;align-items:center;justify-content:space-between;height:64px;
+}
+.topbar-left{display:flex;align-items:center;gap:14px;}
+.topbar-mark{width:34px;height:34px;border-radius:9px;background:var(--gold);display:flex;align-items:center;justify-content:center;font-family:'Kanit';font-weight:800;color:var(--navy-dark);}
+.topbar-title{font-family:'Kanit';font-weight:700;font-size:17px;}
+.topbar-sub{font-size:11px;color:#9FB2B8;}
+.topbar-right{display:flex;align-items:center;gap:16px;}
+.topbar-right .user{font-size:13px;color:#C9D6D9;}
+.logout-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;}
+.logout-btn:active{background:rgba(255,255,255,.2);}
+
+.tabbar{background:var(--panel);border-bottom:1px solid var(--line);padding:0 24px;display:flex;gap:4px;}
+.tab-btn{
+  background:none;border:none;padding:16px 18px;font-family:'Kanit';font-weight:600;font-size:15px;
+  color:var(--ink-soft);border-bottom:3px solid transparent;
+}
+.tab-btn.active{color:var(--navy);border-bottom-color:var(--gold);}
+
+.content{max-width:1180px;margin:0 auto;padding:26px 24px 60px;}
+.panel-title-row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;}
+.panel-title-row h2{font-size:22px;margin:0;}
+.panel-title-row p{margin:2px 0 0;color:var(--ink-soft);font-size:14px;}
+
+.btn{border:none;border-radius:10px;padding:11px 18px;font-family:'Kanit';font-weight:600;font-size:14px;}
+.btn-navy{background:var(--navy);color:#fff;}
+.btn-navy:active{background:var(--navy-dark);}
+.btn-gold{background:var(--gold);color:var(--navy-dark);}
+.btn-gold:active{background:var(--gold-dark);}
+.btn-outline{background:#fff;color:var(--navy);border:1.5px solid var(--navy);}
+.btn-ghost{background:none;color:var(--ink-soft);text-decoration:underline;font-weight:500;}
+.btn-sm{padding:7px 12px;font-size:13px;border-radius:8px;}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;}
+
+/* Cards */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px;}
+.stat-card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--navy);border-radius:12px;padding:16px 18px;}
+.stat-card.gold{border-left-color:var(--gold);}
+.stat-card.green{border-left-color:var(--green);}
+.stat-num{font-family:'Kanit';font-weight:800;font-size:26px;color:var(--navy);}
+.stat-label{font-size:13px;color:var(--ink-soft);margin-top:2px;}
+
+/* Table */
+.table-wrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
+table{width:100%;border-collapse:collapse;font-size:14px;}
+th{background:var(--navy-tint);color:var(--navy-dark);font-family:'Kanit';font-weight:600;text-align:left;padding:12px 12px;white-space:nowrap;}
+td{padding:11px 12px;border-top:1px solid var(--line);vertical-align:middle;}
+tr:hover td{background:#FAFBFB;}
+.no-col{color:var(--ink-faint);font-family:'IBM Plex Mono';}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;}
+.badge-green{background:var(--green-tint);color:var(--green);}
+.badge-gray{background:#F0F2F1;color:var(--ink-faint);}
+.row-actions button{background:none;border:none;font-size:13px;font-weight:600;padding:4px 6px;}
+.row-actions .edit{color:var(--navy);}
+.row-actions .del{color:var(--red);}
+.empty-row td{text-align:center;color:var(--ink-faint);padding:40px;}
+
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
+.search-input{flex:1;min-width:180px;padding:10px 14px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;}
+.date-input,.select-input{padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,46,56,.5);z-index:50;align-items:center;justify-content:center;padding:16px;}
+.modal-overlay.active{display:flex;}
+.modal-box{background:#fff;border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;padding:26px;}
+.modal-box h3{margin:0 0 18px;font-size:19px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.form-grid .full{grid-column:1/-1;}
+.form-field label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;}
+.form-field input,.form-field select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;}
+.check-row{display:flex;gap:18px;align-items:center;margin-top:4px;}
+.check-row label{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:500;}
+.modal-actions{display:flex;gap:10px;margin-top:22px;}
+
+/* Import box */
+.import-box{margin-top:18px;}
+.import-box textarea{width:100%;min-height:110px;border:1.5px solid var(--line);border-radius:10px;padding:12px;font-family:'IBM Plex Mono';font-size:12.5px;}
+.import-note{font-size:12.5px;color:var(--ink-soft);margin:8px 0 0;}
+
+/* Manage lists (backend tab) */
+.manage-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media (max-width:800px){.manage-grid{grid-template-columns:1fr;} .form-grid{grid-template-columns:1fr;}}
+.chip-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+.chip{background:var(--navy-tint);color:var(--navy-dark);padding:7px 8px 7px 12px;border-radius:999px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;}
+.chip button{background:none;border:none;color:var(--navy-dark);opacity:.55;font-size:14px;line-height:1;}
+.add-inline{display:flex;gap:8px;}
+.add-inline input{flex:1;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;}
+
+/* Print area for ส่งบัญชี */
+.print-header{display:none;}
+@media print{
+  body *{visibility:hidden;}
+  .print-area, .print-area *{visibility:visible;}
+  .print-area{position:absolute;left:0;top:0;width:100%;padding:20px;}
+  .print-header{display:block;margin-bottom:14px;}
+  .print-header h2{margin:0 0 4px;font-size:20px;}
+  .print-header p{margin:0;font-size:13px;color:#333;}
+  .print-sign{display:flex;justify-content:space-between;margin-top:40px;font-size:13px;}
+}
+.footer-hint{color:var(--ink-faint);font-size:12px;margin-top:30px;text-align:center;}
+.sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<section id="screen-login" class="screen active">
+  <div class="login-card">
+    <div class="login-mark">บช</div>
+    <h1>ระบบบันทึกเอกสาร</h1>
+    <p class="sub">เข้าสู่ระบบเพื่อบันทึกและส่งเอกสารบัญชี</p>
+    <div class="field">
+      <label>ชื่อผู้ใช้</label>
+      <input type="text" id="loginUser" placeholder="username">
+    </div>
+    <div class="field">
+      <label>รหัสผ่าน</label>
+      <input type="password" id="loginPass" placeholder="password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="login-btn" id="loginSubmitBtn" onclick="doLogin()" disabled>กำลังเชื่อมต่อฐานข้อมูล...</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-hint">เริ่มต้น: admin / 1234 (แก้ไขได้ในแท็บข้อมูลหลังบ้านหลังล็อกอิน)</div>
+  </div>
+</section>
+
+<!-- ============ APP ============ -->
+<section id="screen-app" class="screen">
+  <div class="topbar no-print">
+    <div class="topbar-left">
+      <div class="topbar-mark">บช</div>
+      <div>
+        <div class="topbar-title">ระบบบันทึกเอกสาร</div>
+        <div class="topbar-sub"><span class="sync-dot"></span>เชื่อมต่อฐานข้อมูลกลาง · บันทึกรายการ · ส่งบัญชี · ข้อมูลหลังบ้าน</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="user" id="topUser">admin</div>
+      <button class="logout-btn" onclick="doLogout()">ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <div class="tabbar no-print">
+    <button class="tab-btn active" data-tab="ledger" onclick="switchTab('ledger')">📒 บันทึกรายการ</button>
+    <button class="tab-btn" data-tab="submit" onclick="switchTab('submit')">📤 ส่งบัญชี</button>
+    <button class="tab-btn" data-tab="backend" onclick="switchTab('backend')">⚙️ ข้อมูลหลังบ้าน</button>
+  </div>
+
+  <div class="content">
+
+    <!-- ===== TAB: LEDGER ===== -->
+    <div id="pane-ledger" class="pane">
+      <div class="stat-row">
+        <div class="stat-card"><div class="stat-num" id="statTotal">0</div><div class="stat-label">รายการทั้งหมด</div></div>
+        <div class="stat-card gold"><div class="stat-num" id="statMonth">0</div><div class="stat-label">เดือนนี้</div></div>
+        <div class="stat-card green"><div class="stat-num" id="statPending">0</div><div class="stat-label">ยังไม่ทำเครื่องหมาย ✓</div></div>
+      </div>
+
+      <div class="panel-title-row">
+        <div><h2>บันทึกรายการ</h2><p>บันทึกเอกสารรับเข้าต่อเนื่อง ข้อมูลซิงค์ทุกเครื่องแบบเรียลไทม์</p></div>
+        <div class="btn-row no-print">
+          <button class="btn btn-outline" onclick="toggleImport()">นำเข้าข้อมูล</button>
+          <button class="btn btn-outline" onclick="exportCsv()">ส่งออก CSV</button>
+          <button class="btn btn-gold" onclick="openRecordModal()">+ เพิ่มรายการ</button>
+        </div>
+      </div>
+
+      <div class="card import-box no-print" id="importBox" style="display:none;">
+        <label style="font-weight:600;font-size:14px;">วางข้อมูลจาก Google Sheets (คัดลอกทั้งแถว รวมคอลัมน์ ลำดับ, ว/ด/ป, บริษัท, เลขที่, ใบกำกับ, สำเนา, หมายเหตุ, วันที่นำส่ง)</label>
+        <textarea id="importText" placeholder="วางข้อมูลที่คัดลอกจากชีทตรงนี้..."></textarea>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-navy btn-sm" onclick="runImport()">นำเข้าข้อมูล</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleImport()">ยกเลิก</button>
+        </div>
+        <p class="import-note">รองรับเครื่องหมาย ✓ หรือ TRUE ในคอลัมน์ใบกำกับ/สำเนา ระบบจะรันเลขลำดับใหม่ให้อัตโนมัติต่อจากรายการล่าสุด</p>
+      </div>
+
+      <div class="toolbar no-print">
+        <input class="search-input" id="ledgerSearch" placeholder="ค้นหาบริษัท / เลขที่เอกสาร..." oninput="renderLedger()">
+        <select class="select-input" id="ledgerNoteFilter" onchange="renderLedger()"><option value="">ทุกประเภทเอกสาร</option></select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>ลำดับ</th><th>ว/ด/ป</th><th>บริษัท</th><th>เลขที่</th><th>สถานะ</th><th>หมายเหตุ</th><th>วันที่นำส่ง</th><th class="no-print"></th>
+          </tr></thead>
+          <tbody id="ledgerBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== TAB: SUBMIT TO ACCOUNTING ===== -->
+    <div id="pane-submit" class="pane" style="display:none;">
+      <div class="panel-title-row">
+        <div><h2>ส่งบัญชี</h2><p>เลือกช่วงวันที่ (ยึดวันที่นำส่ง) เพื่อดึงรายการแนบส่งบัญชีพร้อมบิล</p></div>
+        <div class="btn-row no-print">
+          <button class="btn btn-gold" onclick="window.print()">🖨️ พิมพ์รายการนี้</button>
+        </div>
+      </div>
+
+      <div class="card no-print" style="margin-bottom:20px;">
+        <div class="toolbar" style="margin-bottom:0;">
+          <div class="form-field" style="min-width:160px;"><label>จากวันที่นำส่ง</label><input type="date" id="submitFrom" class="date-input" onchange="renderSubmit()"></div>
+          <div class="form-field" style="min-width:160px;"><label>ถึงวันที่นำส่ง</label><input type="date" id="submitTo" class="date-input" onchange="renderSubmit()"></div>
+          <div class="form-field" style="min-width:170px;">
+            <label>กรองตามวันที่</label>
+            <select class="select-input" id="submitDateMode" onchange="renderSubmit()">
+              <option value="sentDate">วันที่นำส่ง</option>
+              <option value="docDate">ว/ด/ป เอกสาร</option>
+            </select>
+          </div>
+          <button class="btn btn-outline btn-sm" style="align-self:flex-end;" onclick="clearSubmitFilter()">ล้างตัวกรอง</button>
+        </div>
+      </div>
+
+      <div class="print-area">
+        <div class="print-header">
+          <h2>เอกสารแนบส่งบัญชี</h2>
+          <p id="printRange">ช่วงวันที่: ทั้งหมด</p>
+          <p id="printCount">จำนวน 0 รายการ</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>ลำดับ</th><th>ว/ด/ป</th><th>บริษัท</th><th>เลขที่</th><th>สถานะ</th><th>หมายเหตุ</th><th>วันที่นำส่ง</th>
+            </tr></thead>
+            <tbody id="submitBody"></tbody>
+          </table>
+        </div>
+        <div class="print-sign">
+          <div>ผู้ส่งเอกสาร: ..............................</div>
+          <div>ผู้รับเอกสาร (บัญชี): ..............................</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TAB: BACKEND / MASTER DATA ===== -->
+    <div id="pane-backend" class="pane" style="display:none;">
+      <div class="panel-title-row">
+        <div><h2>ข้อมูลหลังบ้าน</h2><p>รายชื่อบริษัทและประเภทเอกสารที่ใช้เป็นตัวเลือกในหน้าบันทึกรายการ</p></div>
+      </div>
+      <div class="manage-grid">
+        <div class="card">
+          <h3 style="margin-top:0;">รายชื่อบริษัท</h3>
+          <div class="chip-list" id="companyChips"></div>
+          <div class="add-inline">
+            <input id="newCompany" placeholder="เพิ่มชื่อบริษัท...">
+            <button class="btn btn-navy btn-sm" onclick="addCompany()">เพิ่ม</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0;">ประเภทเอกสาร (หมายเหตุ)</h3>
+          <div class="chip-list" id="noteChips"></div>
+          <div class="add-inline">
+            <input id="newNoteType" placeholder="เพิ่มประเภทเอกสาร...">
+            <button class="btn btn-navy btn-sm" onclick="addNoteType()">เพิ่ม</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0;">บัญชีผู้ใช้งาน (ใช้ร่วมกันทั้งบริษัท)</h3>
+        <div class="form-grid">
+          <div class="form-field"><label>ชื่อผู้ใช้ใหม่</label><input id="newUsername" placeholder="username"></div>
+          <div class="form-field"><label>รหัสผ่านใหม่</label><input id="newPassword" type="password" placeholder="password"></div>
+        </div>
+        <button class="btn btn-navy btn-sm" style="margin-top:14px;" onclick="updateCreds()">บันทึกการเปลี่ยนแปลง</button>
+        <p class="import-note">หมายเหตุ: รหัสนี้เป็นเพียงด่านกันคนนอกเข้าใช้งานหน้าเว็บ ไม่ใช่ระบบความปลอดภัยระดับธนาคาร เหมาะกับใช้ภายในทีมที่ไว้ใจกัน</p>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0;">สำรอง / กู้คืนข้อมูล</h3>
+        <div class="btn-row">
+          <button class="btn btn-outline btn-sm" onclick="backupJson()">ดาวน์โหลดไฟล์สำรองข้อมูล (JSON)</button>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('restoreFile').click()">นำเข้าไฟล์สำรอง</button>
+          <input type="file" id="restoreFile" accept=".json" style="display:none;" onchange="restoreJson(event)">
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer-hint no-print">ข้อมูลทั้งหมดเก็บบน Firebase (thanaphon-ledger) ทุกเครื่องที่เข้าเว็บนี้เห็นข้อมูลชุดเดียวกันแบบเรียลไทม์</div>
+</section>
+
+<!-- ============ MODAL: ADD/EDIT RECORD ============ -->
+<div class="modal-overlay no-print" id="recordModal">
+  <div class="modal-box">
+    <h3 id="modalTitle">เพิ่มรายการ</h3>
+    <div class="form-grid">
+      <div class="form-field"><label>ว/ด/ป (วันที่เอกสาร)</label><input type="date" id="fDocDate"></div>
+      <div class="form-field"><label>วันที่นำส่ง</label><input type="date" id="fSentDate"></div>
+      <div class="form-field full"><label>บริษัท</label><input list="companyOptions" id="fCompany" placeholder="พิมพ์หรือเลือกบริษัท"><datalist id="companyOptions"></datalist></div>
+      <div class="form-field full"><label>เลขที่เอกสาร</label><input id="fDocNo" placeholder="เช่น IV6902-0207"></div>
+      <div class="form-field full">
+        <label>สถานะเอกสาร</label>
+        <div class="check-row">
+          <label><input type="checkbox" id="fIsInvoice"> ใบกำกับ</label>
+          <label><input type="checkbox" id="fIsCopy"> สำเนา</label>
+        </div>
+      </div>
+      <div class="form-field full"><label>หมายเหตุ (ประเภทเอกสาร)</label><input list="noteOptions" id="fNote" placeholder="เช่น ใบวางบิล, ใบเสร็จ"><datalist id="noteOptions"></datalist></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-navy" onclick="saveRecord()">บันทึก</button>
+      <button class="btn btn-ghost" onclick="closeRecordModal()">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== FIREBASE INIT ===================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyDomwchlyoQ5qDcNoF0AdBbVT_cxsuSwn0",
+  authDomain: "thanaphon-ledger.firebaseapp.com",
+  projectId: "thanaphon-ledger",
+  storageBucket: "thanaphon-ledger.firebasestorage.app",
+  messagingSenderId: "477267489341",
+  appId: "1:477267489341:web:885c50da3fa349bb47b054",
+  measurementId: "G-T5E829BGM1"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const metaRef = db.collection('ledgerMeta').doc('config');
+const counterRef = db.collection('ledgerMeta').doc('counter');
+const recordsCol = db.collection('ledgerRecords');
+
+/* ===================== SEED DATA ===================== */
+const DEFAULT_COMPANIES = ["ทีเอเอสไอ","อัยธนา","ลีแอนด์สตีล","บำรุงรักษ์1993","เหล็กใต้","สินสว่างการไฟฟ้า",
+"เคี่ยนล้งอะไหล่ยนต์ สาย1","เคี่ยนล้งอะไหล่ยนต์ โกดัง","111 ขนส่ง","เค.บี.อาร์ อินเตอร์เทรด","เอ็มซี.เคมิคอล อินดัสตรี้",
+"8 นั่งร้าน","ท้อปแก๊ส","ยูนีแม็ค ไทยแลนด์","คาลปีด้า","ไพรมัส สาขา 00012","เคจีเอส","อรุณ ช่วยจวน","เอที พรีเมี่ยม",
+"หาดใหญ่อ๊อกซิเย่น","ส.สวิทช์บอร์ดการไฟฟ้า","ไทยเซฟ โปรดักส์","เอ็ม ยู ไอ เซาท์เทิร์น","อู่ไพโรจน์","พัฒนาเอ็กซ์เพลส",
+"ทีเอ็น คอร์ปอเรชั่น","วี ทู เอส","เอ พี เอ 2009","วิศวกรรมเคมี","ที.จี. คอนโทรล","เจริญเมืองแมชชินเนอรี่","แอดไวซ์",
+"หาดใหญ่อานนท์","ที โอ เอ็ม","พิมพ์ถูก พิมพ์ดี 69","ดำยางยนต์","แอโร เมทัล","เจซี แฟคทอรี่เมท","คอมโพแม็ก"];
+const DEFAULT_NOTETYPES = ["ใบวางบิล","ใบนำส่ง","ใบเสร็จ","จดหมาย","ใบเช่า","ใบซ่อมรถ","ใบเบิกเงิน","ไม่ระบุ"];
+const DEFAULT_RECORDS = [
+  {no:95, docDate:'2026-02-04', company:'เคี่ยนล้งอะไหล่ยนต์ สาย1', docNo:'6901526', isInvoice:true, isCopy:false, note:'', sentDate:'2026-02-05'},
+  {no:96, docDate:'2026-02-04', company:'เคี่ยนล้งอะไหล่ยนต์ โกดัง', docNo:'IV26-00708', isInvoice:true, isCopy:false, note:'', sentDate:'2026-02-05'},
+  {no:97, docDate:'2026-02-03', company:'ยูนีแม็ค ไทยแลนด์', docNo:'V6902032', isInvoice:true, isCopy:false, note:'', sentDate:'2026-02-05'},
+];
+
+/* ===================== STATE ===================== */
+let auth = {user:'admin', pass:'1234'};
+let companies = DEFAULT_COMPANIES.slice();
+let noteTypes = DEFAULT_NOTETYPES.slice();
+let records = [];
+let editingId = null;
+let dataReady = false;
+
+/* ===================== BOOTSTRAP FIRESTORE ===================== */
+async function ensureSeedData(){
+  const cfgSnap = await metaRef.get();
+  if(!cfgSnap.exists){
+    await metaRef.set({auth, companies:DEFAULT_COMPANIES, noteTypes:DEFAULT_NOTETYPES});
+  }
+  const counterSnap = await counterRef.get();
+  if(!counterSnap.exists){
+    await counterRef.set({lastNo:97});
+  }
+  const recSnap = await recordsCol.limit(1).get();
+  if(recSnap.empty){
+    const batch = db.batch();
+    DEFAULT_RECORDS.forEach(r=>{ batch.set(recordsCol.doc(), r); });
+    await batch.commit();
+  }
+}
+function listenMeta(){
+  metaRef.onSnapshot(doc=>{
+    if(doc.exists){
+      const d = doc.data();
+      if(d.auth) auth = d.auth;
+      if(d.companies) companies = d.companies;
+      if(d.noteTypes) noteTypes = d.noteTypes;
+      refreshAllDropdowns();
+      if(document.getElementById('screen-app').classList.contains('active')) renderBackend();
+    }
+    dataReady = true;
+    const btn = document.getElementById('loginSubmitBtn');
+    if(btn){ btn.disabled=false; btn.textContent='เข้าสู่ระบบ'; }
+  }, err=>{
+    document.getElementById('loginError').textContent = 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+err.message;
+  });
+}
+function listenRecords(){
+  recordsCol.onSnapshot(snap=>{
+    records = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    if(document.getElementById('screen-app').classList.contains('active')){
+      renderLedger();
+      renderSubmit();
+    }
+  });
+}
+(async function boot(){
+  try{ await ensureSeedData(); }catch(e){ console.error('seed error', e); }
+  listenMeta();
+  listenRecords();
+})();
+
+async function updateMeta(partial){
+  await metaRef.set(partial, {merge:true});
+}
+async function nextNo(){
+  return db.runTransaction(async tx=>{
+    const snap = await tx.get(counterRef);
+    const last = snap.exists ? (snap.data().lastNo||0) : 0;
+    const next = last+1;
+    tx.set(counterRef, {lastNo:next});
+    return next;
+  });
+}
+async function reserveNoBlock(count){
+  return db.runTransaction(async tx=>{
+    const snap = await tx.get(counterRef);
+    const last = snap.exists ? (snap.data().lastNo||0) : 0;
+    tx.set(counterRef, {lastNo:last+count});
+    return last;
+  });
+}
+
+/* ===================== DATE HELPERS ===================== */
+function isoToBe(iso){
+  if(!iso) return '-';
+  const [y,m,d] = iso.split('-').map(Number);
+  return String(d).padStart(2,'0')+'/'+String(m).padStart(2,'0')+'/'+(y+543);
+}
+function beToIso(str){
+  const parts = str.trim().split('/');
+  if(parts.length!==3) return null;
+  let [d,m,y] = parts.map(s=>parseInt(s,10));
+  if(y>2400) y -= 543;
+  return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+}
+function todayIso(){ return new Date().toISOString().slice(0,10); }
+
+/* ===================== LOGIN ===================== */
+function doLogin(){
+  if(!dataReady){ document.getElementById('loginError').textContent='ระบบกำลังเชื่อมต่อฐานข้อมูล กรุณารอสักครู่'; return; }
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  if(u===auth.user && p===auth.pass){
+    enterApp();
+  } else {
+    document.getElementById('loginError').textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+  }
+}
+function doLogout(){
+  document.getElementById('screen-app').classList.remove('active');
+  document.getElementById('screen-login').classList.add('active');
+  document.getElementById('loginPass').value='';
+}
+function enterApp(){
+  document.getElementById('topUser').textContent = auth.user;
+  document.getElementById('screen-login').classList.remove('active');
+  document.getElementById('screen-app').classList.add('active');
+  refreshAllDropdowns();
+  renderLedger();
+  const t = todayIso();
+  document.getElementById('submitFrom').value = t.slice(0,8)+'01';
+  document.getElementById('submitTo').value = t;
+  renderSubmit();
+  renderBackend();
+}
+
+/* ===================== TABS ===================== */
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  ['ledger','submit','backend'].forEach(t=>{
+    document.getElementById('pane-'+t).style.display = (t===tab)?'block':'none';
+  });
+}
+
+/* ===================== DROPDOWNS ===================== */
+function refreshAllDropdowns(){
+  const co = document.getElementById('companyOptions');
+  const no = document.getElementById('noteOptions');
+  const nf = document.getElementById('ledgerNoteFilter');
+  if(co) co.innerHTML = companies.map(c=>`<option value="${c}">`).join('');
+  if(no) no.innerHTML = noteTypes.map(n=>`<option value="${n}">`).join('');
+  if(nf) nf.innerHTML = '<option value="">ทุกประเภทเอกสาร</option>' + noteTypes.map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+
+/* ===================== LEDGER RENDER ===================== */
+function statusBadge(r){
+  if(r.isInvoice) return '<span class="badge badge-green">✓ ใบกำกับ</span>';
+  if(r.isCopy) return '<span class="badge badge-green">✓ สำเนา</span>';
+  return '<span class="badge badge-gray">—</span>';
+}
+function renderLedger(){
+  const q = document.getElementById('ledgerSearch').value.trim().toLowerCase();
+  const noteFilter = document.getElementById('ledgerNoteFilter').value;
+  const body = document.getElementById('ledgerBody');
+  let list = [...records].sort((a,b)=>b.no-a.no);
+  if(q) list = list.filter(r => r.company.toLowerCase().includes(q) || (r.docNo||'').toLowerCase().includes(q));
+  if(noteFilter) list = list.filter(r => r.note===noteFilter);
+  body.innerHTML='';
+  if(list.length===0){
+    body.innerHTML = '<tr class="empty-row"><td colspan="8">ไม่พบรายการ</td></tr>';
+  } else {
+    list.forEach(r=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="no-col">${r.no}</td><td>${isoToBe(r.docDate)}</td><td>${r.company}</td>
+        <td class="mono">${r.docNo||'-'}</td><td>${statusBadge(r)}</td><td>${r.note||'-'}</td><td>${isoToBe(r.sentDate)}</td>
+        <td class="no-print row-actions"><button class="edit" onclick="openRecordModal('${r.id}')">แก้ไข</button><button class="del" onclick="deleteRecord('${r.id}')">ลบ</button></td>`;
+      body.appendChild(tr);
+    });
+  }
+  document.getElementById('statTotal').textContent = records.length;
+  const now = new Date();
+  const ym = now.toISOString().slice(0,7);
+  document.getElementById('statMonth').textContent = records.filter(r=>r.sentDate && r.sentDate.startsWith(ym)).length;
+  document.getElementById('statPending').textContent = records.filter(r=>!r.isInvoice && !r.isCopy).length;
+}
+
+/* ===================== RECORD MODAL ===================== */
+function openRecordModal(id){
+  editingId = id || null;
+  refreshAllDropdowns();
+  if(id){
+    const r = records.find(x=>x.id===id);
+    document.getElementById('modalTitle').textContent = 'แก้ไขรายการ #'+r.no;
+    document.getElementById('fDocDate').value = r.docDate;
+    document.getElementById('fSentDate').value = r.sentDate;
+    document.getElementById('fCompany').value = r.company;
+    document.getElementById('fDocNo').value = r.docNo;
+    document.getElementById('fIsInvoice').checked = r.isInvoice;
+    document.getElementById('fIsCopy').checked = r.isCopy;
+    document.getElementById('fNote').value = r.note;
+  } else {
+    document.getElementById('modalTitle').textContent = 'เพิ่มรายการ';
+    document.getElementById('fDocDate').value = todayIso();
+    document.getElementById('fSentDate').value = todayIso();
+    document.getElementById('fCompany').value = '';
+    document.getElementById('fDocNo').value = '';
+    document.getElementById('fIsInvoice').checked = false;
+    document.getElementById('fIsCopy').checked = false;
+    document.getElementById('fNote').value = '';
+  }
+  document.getElementById('recordModal').classList.add('active');
+}
+function closeRecordModal(){ document.getElementById('recordModal').classList.remove('active'); }
+
+async function saveRecord(){
+  const company = document.getElementById('fCompany').value.trim();
+  const docNo = document.getElementById('fDocNo').value.trim();
+  if(!company){ alert('กรุณากรอกชื่อบริษัท'); return; }
+  let metaChanged = false;
+  if(!companies.includes(company)){ companies.push(company); metaChanged = true; }
+  const note = document.getElementById('fNote').value.trim();
+  if(note && !noteTypes.includes(note)){ noteTypes.push(note); metaChanged = true; }
+  if(metaChanged) await updateMeta({companies, noteTypes});
+
+  const data = {
+    docDate: document.getElementById('fDocDate').value,
+    sentDate: document.getElementById('fSentDate').value,
+    company, docNo,
+    isInvoice: document.getElementById('fIsInvoice').checked,
+    isCopy: document.getElementById('fIsCopy').checked,
+    note
+  };
+  if(editingId){
+    await recordsCol.doc(editingId).update(data);
+  } else {
+    const no = await nextNo();
+    await recordsCol.add({no, ...data});
+  }
+  closeRecordModal();
+}
+async function deleteRecord(id){
+  if(!confirm('ลบรายการนี้?')) return;
+  await recordsCol.doc(id).delete();
+}
+
+/* ===================== IMPORT / EXPORT ===================== */
+function toggleImport(){
+  const box = document.getElementById('importBox');
+  box.style.display = box.style.display==='none' ? 'block' : 'none';
+}
+function truthy(v){
+  v = (v||'').trim().toLowerCase();
+  return v==='✓' || v==='true' || v==='v' || v==='x' || v==='yes';
+}
+async function runImport(){
+  const text = document.getElementById('importText').value;
+  const lines = text.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+  const parsed = [];
+  lines.forEach(line=>{
+    const cols = line.split('\t');
+    if(cols.length<4) return;
+    const [noRaw, dateRaw, company, docNo, invRaw, copyRaw, noteRaw, sentRaw] = cols;
+    if(!company || company==='บริษัท' || /^ลำดับ$/.test(noRaw)) return;
+    const docDate = beToIso(dateRaw) || todayIso();
+    const sentDate = sentRaw ? (beToIso(sentRaw) || todayIso()) : todayIso();
+    parsed.push({
+      docDate, sentDate,
+      company: company.trim(),
+      docNo: (docNo||'').trim(),
+      isInvoice: truthy(invRaw),
+      isCopy: truthy(copyRaw),
+      note: (noteRaw||'').trim()
+    });
+  });
+  if(parsed.length===0){ alert('ไม่พบข้อมูลที่นำเข้าได้ ตรวจสอบว่าคัดลอกมาถูกคอลัมน์'); return; }
+  const startNo = await reserveNoBlock(parsed.length);
+  const batch = db.batch();
+  parsed.forEach((p,i)=>{
+    batch.set(recordsCol.doc(), {...p, no:startNo+i+1});
+    if(!companies.includes(p.company)) companies.push(p.company);
+    if(p.note && !noteTypes.includes(p.note)) noteTypes.push(p.note);
+  });
+  await batch.commit();
+  await updateMeta({companies, noteTypes});
+  document.getElementById('importText').value='';
+  toggleImport();
+  alert('นำเข้าข้อมูลสำเร็จ '+parsed.length+' รายการ');
+}
+function exportCsv(){
+  const header = ['ลำดับ','ว/ด/ป','บริษัท','เลขที่','ใบกำกับ','สำเนา','หมายเหตุ','วันที่นำส่ง'];
+  const rows = [...records].sort((a,b)=>a.no-b.no).map(r=>[
+    r.no, isoToBe(r.docDate), r.company, r.docNo, r.isInvoice?'✓':'', r.isCopy?'✓':'', r.note, isoToBe(r.sentDate)
+  ]);
+  let csv = header.join(',') + '\n' + rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'บันทึกรายการ.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+/* ===================== SUBMIT TO ACCOUNTING ===================== */
+function clearSubmitFilter(){
+  document.getElementById('submitFrom').value='';
+  document.getElementById('submitTo').value='';
+  renderSubmit();
+}
+function renderSubmit(){
+  const from = document.getElementById('submitFrom').value;
+  const to = document.getElementById('submitTo').value;
+  const mode = document.getElementById('submitDateMode').value;
+  let list = [...records].sort((a,b)=>a.no-b.no);
+  list = list.filter(r=>{
+    const d = mode==='docDate' ? r.docDate : r.sentDate;
+    if(from && d < from) return false;
+    if(to && d > to) return false;
+    return true;
+  });
+  const body = document.getElementById('submitBody');
+  body.innerHTML='';
+  if(list.length===0){
+    body.innerHTML = '<tr class="empty-row"><td colspan="7">ไม่พบรายการในช่วงวันที่ที่เลือก</td></tr>';
+  } else {
+    list.forEach(r=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="no-col">${r.no}</td><td>${isoToBe(r.docDate)}</td><td>${r.company}</td>
+        <td class="mono">${r.docNo||'-'}</td><td>${statusBadge(r)}</td><td>${r.note||'-'}</td><td>${isoToBe(r.sentDate)}</td>`;
+      body.appendChild(tr);
+    });
+  }
+  const rangeLabel = (from||to) ? `${from?isoToBe(from):'เริ่มต้น'} - ${to?isoToBe(to):'ปัจจุบัน'}` : 'ทั้งหมด';
+  document.getElementById('printRange').textContent = 'ช่วงวันที่ (' + (mode==='docDate'?'ว/ด/ป เอกสาร':'วันที่นำส่ง') + '): ' + rangeLabel;
+  document.getElementById('printCount').textContent = 'จำนวน ' + list.length + ' รายการ';
+}
+
+/* ===================== BACKEND / MASTER DATA ===================== */
+function renderBackend(){
+  document.getElementById('companyChips').innerHTML = companies.map(c=>
+    `<span class="chip">${c}<button onclick="removeCompany('${c.replace(/'/g,"\\'")}')">✕</button></span>`).join('');
+  document.getElementById('noteChips').innerHTML = noteTypes.map(n=>
+    `<span class="chip">${n}<button onclick="removeNoteType('${n.replace(/'/g,"\\'")}')">✕</button></span>`).join('');
+}
+async function addCompany(){
+  const v = document.getElementById('newCompany').value.trim();
+  if(!v) return;
+  if(!companies.includes(v)) companies.push(v);
+  await updateMeta({companies});
+  document.getElementById('newCompany').value='';
+}
+async function removeCompany(name){
+  companies = companies.filter(c=>c!==name);
+  await updateMeta({companies});
+}
+async function addNoteType(){
+  const v = document.getElementById('newNoteType').value.trim();
+  if(!v) return;
+  if(!noteTypes.includes(v)) noteTypes.push(v);
+  await updateMeta({noteTypes});
+  document.getElementById('newNoteType').value='';
+}
+async function removeNoteType(name){
+  noteTypes = noteTypes.filter(n=>n!==name);
+  await updateMeta({noteTypes});
+}
+async function updateCreds(){
+  const u = document.getElementById('newUsername').value.trim();
+  const p = document.getElementById('newPassword').value;
+  if(!u && !p){ alert('กรอกชื่อผู้ใช้หรือรหัสผ่านใหม่ก่อน'); return; }
+  const newAuth = {user: u||auth.user, pass: p||auth.pass};
+  await updateMeta({auth:newAuth});
+  document.getElementById('topUser').textContent = newAuth.user;
+  document.getElementById('newUsername').value='';
+  document.getElementById('newPassword').value='';
+  alert('บันทึกการเปลี่ยนแปลงบัญชีผู้ใช้แล้ว');
+}
+
+/* ===================== BACKUP / RESTORE ===================== */
+function backupJson(){
+  const payload = {auth, companies, noteTypes, records, exportedAt:new Date().toISOString()};
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download='ledger-backup-'+todayIso()+'.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+function restoreJson(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  if(!confirm('การนำเข้าไฟล์สำรองจะแทนที่รายการทั้งหมดในฐานข้อมูลกลาง ยืนยันหรือไม่?')) { evt.target.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = async e=>{
+    try{
+      const data = JSON.parse(e.target.result);
+      if(data.auth) await updateMeta({auth:data.auth});
+      if(data.companies) await updateMeta({companies:data.companies});
+      if(data.noteTypes) await updateMeta({noteTypes:data.noteTypes});
+      if(data.records){
+        const existing = await recordsCol.get();
+        const delBatch = db.batch();
+        existing.docs.forEach(d=>delBatch.delete(d.ref));
+        await delBatch.commit();
+        const addBatch = db.batch();
+        let maxNo = 0;
+        data.records.forEach(r=>{
+          const {id, ...rest} = r;
+          addBatch.set(recordsCol.doc(), rest);
+          maxNo = Math.max(maxNo, rest.no||0);
+        });
+        await addBatch.commit();
+        await counterRef.set({lastNo:maxNo});
+      }
+      alert('กู้คืนข้อมูลสำเร็จ');
+    }catch(err){ alert('ไฟล์ไม่ถูกต้อง: '+err.message); }
+    evt.target.value='';
+  };
+  reader.readAsText(file);
+}
+</script>
+</body>
+</html>
