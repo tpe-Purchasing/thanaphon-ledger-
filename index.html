@@ -644,6 +644,7 @@ async function importParsedRows(rows){
   const seen = existingKeySet();
   const parsed = [];
   let skippedDupe = 0;
+  let maxSeenNo = 0;
   rows.forEach(cols=>{
     if(!cols || cols.length<4) return;
     const [noRaw, dateRaw, company, docNo, invRaw, copyRaw, noteRaw, sentRaw] = cols;
@@ -655,8 +656,11 @@ async function importParsedRows(rows){
     const key = [c, dn, docDate].join('|');
     if(seen.has(key)){ skippedDupe++; return; }
     seen.add(key);
+    const parsedNo = parseInt((noRaw||'').toString().trim(), 10);
+    const no = (Number.isFinite(parsedNo) && parsedNo>0) ? parsedNo : null;
+    if(no) maxSeenNo = Math.max(maxSeenNo, no);
     parsed.push({
-      docDate, sentDate, company:c, docNo:dn,
+      no, docDate, sentDate, company:c, docNo:dn,
       isInvoice: truthy(invRaw), isCopy: truthy(copyRaw), note:(noteRaw||'').trim()
     });
   });
@@ -664,17 +668,23 @@ async function importParsedRows(rows){
     alert(skippedDupe>0 ? `ไม่มีรายการใหม่ (ข้ามรายการซ้ำ ${skippedDupe} รายการ)` : 'ไม่พบข้อมูลที่นำเข้าได้ ตรวจสอบว่าคัดลอก/ดึงมาถูกคอลัมน์');
     return;
   }
-  const startNo = await reserveNoBlock(parsed.length);
+  const counterSnap = await counterRef.get();
+  let runningNo = Math.max(maxSeenNo, counterSnap.exists ? (counterSnap.data().lastNo||0) : 0);
   const batch = db.batch();
-  parsed.forEach((p,i)=>{
-    batch.set(recordsCol.doc(), {...p, no:startNo+i+1});
+  parsed.forEach(p=>{
+    const {no, ...rest} = p;
+    let assignedNo = no;
+    if(!assignedNo){ runningNo += 1; assignedNo = runningNo; }
+    batch.set(recordsCol.doc(), {...rest, no:assignedNo});
     if(!companies.includes(p.company)) companies.push(p.company);
     if(p.note && !noteTypes.includes(p.note)) noteTypes.push(p.note);
   });
+  const finalMax = Math.max(runningNo, maxSeenNo, counterSnap.exists?(counterSnap.data().lastNo||0):0);
+  batch.set(counterRef, {lastNo: finalMax});
   await batch.commit();
   await updateMeta({companies, noteTypes});
-  let msg = `นำเข้าข้อมูลสำเร็จ ${parsed.length} รายการ`;
-  if(skippedDupe>0) msg += ` (ข้ามรายการซ้ำ ${skippedDupe} รายการ)`;
+  let msg = `นำเข้าข้อมูลสำเร็จ ${parsed.length} รายการ (เรียงลำดับตามชีทต้นฉบับ)`;
+  if(skippedDupe>0) msg += ` — ข้ามรายการซ้ำ ${skippedDupe} รายการ`;
   alert(msg);
 }
 async function runImport(){
