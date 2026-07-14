@@ -333,6 +333,12 @@ tr:hover td{background:#FAFBFB;}
           <input type="file" id="restoreFile" accept=".json" style="display:none;" onchange="restoreJson(event)">
         </div>
       </div>
+
+      <div class="card" style="margin-top:20px;border-color:var(--red);">
+        <h3 style="margin-top:0;color:var(--red);">ลบข้อมูลทั้งหมด</h3>
+        <p class="import-note">ลบรายการทั้งหมดในแท็บบันทึกรายการทิ้งทันที (ไม่กระทบรายชื่อบริษัท/ประเภทเอกสาร) ใช้ก่อนดึงข้อมูลจากชีทใหม่แบบสะอาดๆ — แนะนำให้กด "ดาวน์โหลดไฟล์สำรองข้อมูล" ก่อนเผื่อไว้</p>
+        <button class="btn btn-sm" style="background:var(--red);color:#fff;" onclick="deleteAllRecords()">ลบรายการทั้งหมด</button>
+      </div>
     </div>
 
   </div>
@@ -844,7 +850,29 @@ async function updateCreds(){
   alert('บันทึกการเปลี่ยนแปลงบัญชีผู้ใช้แล้ว');
 }
 
-/* ===================== BACKUP / RESTORE ===================== */
+async function deleteAllRecords(){
+  if(!confirm('ยืนยันลบรายการทั้งหมดในบันทึกรายการ? การกระทำนี้ย้อนกลับไม่ได้ (แนะนำให้สำรองข้อมูลก่อน)')) return;
+  if(!confirm('ยืนยันอีกครั้ง — รายการทั้งหมด ' + records.length + ' รายการ จะถูกลบทันที ใช่ไหม?')) return;
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.textContent = 'กำลังลบ...'; btn.disabled = true;
+  try{
+    const snap = await recordsCol.get();
+    const docs = snap.docs;
+    const chunkSize = 400;
+    for(let i=0;i<docs.length;i+=chunkSize){
+      const batch = db.batch();
+      docs.slice(i, i+chunkSize).forEach(d=>batch.delete(d.ref));
+      await batch.commit();
+    }
+    await counterRef.set({lastNo:0});
+    alert('ลบรายการทั้งหมดเรียบร้อย ('+docs.length+' รายการ)');
+  }catch(err){
+    alert('ลบไม่สำเร็จ: '+err.message);
+  } finally {
+    btn.textContent = originalText; btn.disabled = false;
+  }
+}
 function backupJson(){
   const payload = {auth, companies, noteTypes, records, exportedAt:new Date().toISOString()};
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
