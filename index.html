@@ -217,10 +217,10 @@ tr:hover td{background:#FAFBFB;}
       <div class="card import-box no-print" id="importBox" style="display:none;">
         <label style="font-weight:600;font-size:14px;">ดึงข้อมูลจาก Google Sheets โดยตรง</label>
         <div class="btn-row" style="margin-top:8px;">
-          <input class="search-input" id="sheetUrlInput" placeholder="วางลิงก์ชีท (ต้องแชร์แบบ 'ใครก็ได้ที่มีลิงก์ดูได้')" style="flex:1;min-width:220px;">
+          <input class="search-input" id="sheetUrlInput" placeholder="วางลิงก์ Publish to web (แนะนำ) หรือลิงก์ชีทปกติที่แชร์แบบดูได้" style="flex:1;min-width:220px;">
           <button class="btn btn-navy btn-sm" onclick="fetchFromSheet()" id="sheetFetchBtn">ดึงข้อมูล</button>
         </div>
-        <p class="import-note">ระบบจะข้ามรายการที่มีบริษัท+เลขที่+วันที่ตรงกับที่มีอยู่แล้ว กันข้อมูลซ้ำเวลากดดึงหลายครั้ง กดซ้ำได้เรื่อยๆ เมื่อมีการอัปเดตในชีท</p>
+        <p class="import-note">แนะนำให้ใช้ลิงก์จาก File → Share → Publish to web (เลือกเฉพาะแท็บ "บันทึกรายการ" รูปแบบ CSV) จะดึงข้อมูลได้ครบและเสถียรที่สุด ระบบจะข้ามรายการที่มีบริษัท+เลขที่+วันที่ตรงกับที่มีอยู่แล้ว กันข้อมูลซ้ำเวลากดดึงหลายครั้ง กดซ้ำได้เรื่อยๆ เมื่อมีการอัปเดตในชีท</p>
         <div class="tear" style="border-top:1px solid var(--line);margin:16px 0;"></div>
         <label style="font-weight:600;font-size:14px;">หรือวางข้อมูลด้วยตัวเอง (คัดลอกทั้งแถว รวมคอลัมน์ ลำดับ, ว/ด/ป, บริษัท, เลขที่, ใบกำกับ, สำเนา, หมายเหตุ, วันที่นำส่ง)</label>
         <textarea id="importText" placeholder="วางข้อมูลที่คัดลอกจากชีทตรงนี้..."></textarea>
@@ -722,20 +722,33 @@ function extractSheetIdAndGid(url){
   const gidMatch = url.match(/[#&?]gid=([0-9]+)/);
   return { id: idMatch ? idMatch[1] : null, gid: gidMatch ? gidMatch[1] : '0' };
 }
+function buildCsvUrl(rawUrl){
+  const url = rawUrl.trim();
+  // Already a "Publish to web" link (most reliable for full anonymous export)
+  if(/\/pub[?/]/.test(url) || url.includes('output=csv')){
+    if(url.includes('output=csv')) return url;
+    const sep = url.includes('?') ? '&' : '?';
+    return url + sep + 'output=csv';
+  }
+  // Fallback: build a gviz query URL from a normal edit link
+  const {id, gid} = extractSheetIdAndGid(url);
+  if(!id) return null;
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
+}
 async function fetchFromSheet(){
   const url = document.getElementById('sheetUrlInput').value.trim();
   if(!url){ alert('วางลิงก์ชีทก่อน'); return; }
-  const {id, gid} = extractSheetIdAndGid(url);
-  if(!id){ alert('อ่านลิงก์ไม่ออก กรุณาวางลิงก์เต็มจาก Google Sheets'); return; }
+  const csvUrl = buildCsvUrl(url);
+  if(!csvUrl){ alert('อ่านลิงก์ไม่ออก กรุณาวางลิงก์เต็มจาก Google Sheets (แนะนำลิงก์แบบ Publish to web)'); return; }
   const btn = document.getElementById('sheetFetchBtn');
   const originalText = btn.textContent;
   btn.textContent = 'กำลังดึงข้อมูล...'; btn.disabled = true;
   try{
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
     const resp = await fetch(csvUrl);
-    if(!resp.ok) throw new Error('โหลดชีทไม่สำเร็จ (สถานะ '+resp.status+') ตรวจสอบว่าชีทแชร์แบบ "ใครก็ได้ที่มีลิงก์ดูได้"');
+    if(!resp.ok) throw new Error('โหลดชีทไม่สำเร็จ (สถานะ '+resp.status+') — ถ้าใช้ลิงก์แบบ edit ปกติ ลองใช้ลิงก์ "Publish to web" แทน (File → Share → Publish to web)');
     const csvText = await resp.text();
     const rows = parseCsv(csvText);
+    if(rows.length < 3){ throw new Error('ได้ข้อมูลมาน้อยผิดปกติ ('+rows.length+' แถว) ตรวจสอบว่าลิงก์ชี้ไปแท็บ "บันทึกรายการ" ที่ถูกต้อง'); }
     await importParsedRows(rows);
   }catch(err){
     alert('ดึงข้อมูลไม่สำเร็จ: '+err.message);
