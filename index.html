@@ -215,7 +215,14 @@ tr:hover td{background:#FAFBFB;}
       </div>
 
       <div class="card import-box no-print" id="importBox" style="display:none;">
-        <label style="font-weight:600;font-size:14px;">วางข้อมูลจาก Google Sheets (คัดลอกทั้งแถว รวมคอลัมน์ ลำดับ, ว/ด/ป, บริษัท, เลขที่, ใบกำกับ, สำเนา, หมายเหตุ, วันที่นำส่ง)</label>
+        <label style="font-weight:600;font-size:14px;">ดึงข้อมูลจาก Google Sheets โดยตรง</label>
+        <div class="btn-row" style="margin-top:8px;">
+          <input class="search-input" id="sheetUrlInput" placeholder="วางลิงก์ชีท (ต้องแชร์แบบ 'ใครก็ได้ที่มีลิงก์ดูได้')" style="flex:1;min-width:220px;">
+          <button class="btn btn-navy btn-sm" onclick="fetchFromSheet()" id="sheetFetchBtn">ดึงข้อมูล</button>
+        </div>
+        <p class="import-note">ระบบจะข้ามรายการที่มีบริษัท+เลขที่+วันที่ตรงกับที่มีอยู่แล้ว กันข้อมูลซ้ำเวลากดดึงหลายครั้ง กดซ้ำได้เรื่อยๆ เมื่อมีการอัปเดตในชีท</p>
+        <div class="tear" style="border-top:1px solid var(--line);margin:16px 0;"></div>
+        <label style="font-weight:600;font-size:14px;">หรือวางข้อมูลด้วยตัวเอง (คัดลอกทั้งแถว รวมคอลัมน์ ลำดับ, ว/ด/ป, บริษัท, เลขที่, ใบกำกับ, สำเนา, หมายเหตุ, วันที่นำส่ง)</label>
         <textarea id="importText" placeholder="วางข้อมูลที่คัดลอกจากชีทตรงนี้..."></textarea>
         <div class="btn-row" style="margin-top:10px;">
           <button class="btn btn-navy btn-sm" onclick="runImport()">นำเข้าข้อมูล</button>
@@ -629,27 +636,34 @@ function truthy(v){
   v = (v||'').trim().toLowerCase();
   return v==='✓' || v==='true' || v==='v' || v==='x' || v==='yes';
 }
-async function runImport(){
-  const text = document.getElementById('importText').value;
-  const lines = text.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+function existingKeySet(){
+  return new Set(records.map(r => [r.company, r.docNo, r.docDate].join('|')));
+}
+async function importParsedRows(rows){
+  // rows: array of column-arrays [noRaw, dateRaw, company, docNo, invRaw, copyRaw, noteRaw, sentRaw]
+  const seen = existingKeySet();
   const parsed = [];
-  lines.forEach(line=>{
-    const cols = line.split('\t');
-    if(cols.length<4) return;
+  let skippedDupe = 0;
+  rows.forEach(cols=>{
+    if(!cols || cols.length<4) return;
     const [noRaw, dateRaw, company, docNo, invRaw, copyRaw, noteRaw, sentRaw] = cols;
-    if(!company || company==='บริษัท' || /^ลำดับ$/.test(noRaw)) return;
+    if(!company || company.trim()==='บริษัท' || /^ลำดับ$/.test((noRaw||'').trim())) return;
     const docDate = beToIso(dateRaw) || todayIso();
     const sentDate = sentRaw ? (beToIso(sentRaw) || todayIso()) : todayIso();
+    const c = company.trim();
+    const dn = (docNo||'').trim();
+    const key = [c, dn, docDate].join('|');
+    if(seen.has(key)){ skippedDupe++; return; }
+    seen.add(key);
     parsed.push({
-      docDate, sentDate,
-      company: company.trim(),
-      docNo: (docNo||'').trim(),
-      isInvoice: truthy(invRaw),
-      isCopy: truthy(copyRaw),
-      note: (noteRaw||'').trim()
+      docDate, sentDate, company:c, docNo:dn,
+      isInvoice: truthy(invRaw), isCopy: truthy(copyRaw), note:(noteRaw||'').trim()
     });
   });
-  if(parsed.length===0){ alert('ไม่พบข้อมูลที่นำเข้าได้ ตรวจสอบว่าคัดลอกมาถูกคอลัมน์'); return; }
+  if(parsed.length===0){
+    alert(skippedDupe>0 ? `ไม่มีรายการใหม่ (ข้ามรายการซ้ำ ${skippedDupe} รายการ)` : 'ไม่พบข้อมูลที่นำเข้าได้ ตรวจสอบว่าคัดลอก/ดึงมาถูกคอลัมน์');
+    return;
+  }
   const startNo = await reserveNoBlock(parsed.length);
   const batch = db.batch();
   parsed.forEach((p,i)=>{
@@ -659,9 +673,65 @@ async function runImport(){
   });
   await batch.commit();
   await updateMeta({companies, noteTypes});
+  let msg = `นำเข้าข้อมูลสำเร็จ ${parsed.length} รายการ`;
+  if(skippedDupe>0) msg += ` (ข้ามรายการซ้ำ ${skippedDupe} รายการ)`;
+  alert(msg);
+}
+async function runImport(){
+  const text = document.getElementById('importText').value;
+  const lines = text.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+  const rows = lines.map(line=>line.split('\t'));
+  await importParsedRows(rows);
   document.getElementById('importText').value='';
   toggleImport();
-  alert('นำเข้าข้อมูลสำเร็จ '+parsed.length+' รายการ');
+}
+
+/* ---- Direct Google Sheets fetch ---- */
+function parseCsv(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){ field+='"'; i++; } else { inQuotes=false; }
+      } else field += c;
+    } else {
+      if(c==='"') inQuotes = true;
+      else if(c===','){ row.push(field); field=''; }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else if(c==='\r'){ /* skip */ }
+      else field += c;
+    }
+  }
+  if(field.length>0 || row.length>0){ row.push(field); rows.push(row); }
+  return rows;
+}
+function extractSheetIdAndGid(url){
+  const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  const gidMatch = url.match(/[#&?]gid=([0-9]+)/);
+  return { id: idMatch ? idMatch[1] : null, gid: gidMatch ? gidMatch[1] : '0' };
+}
+async function fetchFromSheet(){
+  const url = document.getElementById('sheetUrlInput').value.trim();
+  if(!url){ alert('วางลิงก์ชีทก่อน'); return; }
+  const {id, gid} = extractSheetIdAndGid(url);
+  if(!id){ alert('อ่านลิงก์ไม่ออก กรุณาวางลิงก์เต็มจาก Google Sheets'); return; }
+  const btn = document.getElementById('sheetFetchBtn');
+  const originalText = btn.textContent;
+  btn.textContent = 'กำลังดึงข้อมูล...'; btn.disabled = true;
+  try{
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
+    const resp = await fetch(csvUrl);
+    if(!resp.ok) throw new Error('โหลดชีทไม่สำเร็จ (สถานะ '+resp.status+') ตรวจสอบว่าชีทแชร์แบบ "ใครก็ได้ที่มีลิงก์ดูได้"');
+    const csvText = await resp.text();
+    const rows = parseCsv(csvText);
+    await importParsedRows(rows);
+  }catch(err){
+    alert('ดึงข้อมูลไม่สำเร็จ: '+err.message);
+  } finally {
+    btn.textContent = originalText; btn.disabled = false;
+  }
 }
 function exportCsv(){
   const header = ['ลำดับ','ว/ด/ป','บริษัท','เลขที่','ใบกำกับ','สำเนา','หมายเหตุ','วันที่นำส่ง'];
