@@ -647,7 +647,8 @@ function existingKeySet(){
 }
 async function importParsedRows(rows){
   // rows: array of column-arrays [noRaw, dateRaw, company, docNo, invRaw, copyRaw, noteRaw, sentRaw]
-  const seen = existingKeySet();
+  const existingNos = new Set(records.map(r=>r.no));
+  const existingKeys = existingKeySet(); // fallback for rows without a usable ลำดับ number
   const parsed = [];
   let skippedDupe = 0;
   let maxSeenNo = 0;
@@ -659,12 +660,19 @@ async function importParsedRows(rows){
     const sentDate = sentRaw ? (beToIso(sentRaw) || todayIso()) : todayIso();
     const c = company.trim();
     const dn = (docNo||'').trim();
-    const key = [c, dn, docDate].join('|');
-    if(seen.has(key)){ skippedDupe++; return; }
-    seen.add(key);
     const parsedNo = parseInt((noRaw||'').toString().trim(), 10);
     const no = (Number.isFinite(parsedNo) && parsedNo>0) ? parsedNo : null;
-    if(no) maxSeenNo = Math.max(maxSeenNo, no);
+    if(no){
+      // Primary dedup: this exact ลำดับ number already imported before
+      if(existingNos.has(no)){ skippedDupe++; return; }
+      existingNos.add(no);
+      maxSeenNo = Math.max(maxSeenNo, no);
+    } else {
+      // Fallback dedup for rows without a usable ลำดับ (e.g. manual paste)
+      const key = [c, dn, docDate].join('|');
+      if(existingKeys.has(key)){ skippedDupe++; return; }
+      existingKeys.add(key);
+    }
     parsed.push({
       no, docDate, sentDate, company:c, docNo:dn,
       isInvoice: truthy(invRaw), isCopy: truthy(copyRaw), note:(noteRaw||'').trim()
