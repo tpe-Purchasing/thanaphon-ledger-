@@ -160,6 +160,11 @@ tr:hover td{background:#FAFBFB;}
     <div class="login-mark">บช</div>
     <h1>ระบบบันทึกเอกสาร</h1>
     <p class="sub">เข้าสู่ระบบเพื่อบันทึกและส่งเอกสารบัญชี</p>
+    <button class="login-btn" id="googleLoginBtn" onclick="loginWithGoogle()" style="background:#fff;color:var(--ink);border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;gap:8px;">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.9-2.26 5.36-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 0 1 9.5 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A24 24 0 0 0 0 24c0 3.86.92 7.51 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.97 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      เข้าสู่ระบบด้วย Google
+    </button>
+    <div style="text-align:center;color:var(--ink-faint);font-size:12px;margin:14px 0;">— หรือใช้รหัสผ่านทีม —</div>
     <div class="field">
       <label>ชื่อผู้ใช้</label>
       <input type="text" id="loginUser" placeholder="username">
@@ -170,7 +175,7 @@ tr:hover td{background:#FAFBFB;}
     </div>
     <button class="login-btn" id="loginSubmitBtn" onclick="doLogin()" disabled>กำลังเชื่อมต่อฐานข้อมูล...</button>
     <div class="login-error" id="loginError"></div>
-    <div class="login-hint">เริ่มต้น: admin / 1234 (แก้ไขได้ในแท็บข้อมูลหลังบ้านหลังล็อกอิน)</div>
+    <div class="login-hint">Google: ต้องเป็นอีเมลที่ได้รับสิทธิ์ไว้แล้ว · รหัสผ่านทีม เริ่มต้น admin / 1234</div>
   </div>
 </section>
 
@@ -185,7 +190,7 @@ tr:hover td{background:#FAFBFB;}
       </div>
     </div>
     <div class="topbar-right">
-      <button class="logout-btn" id="googleConnBtn" onclick="connectGoogle()" style="background:rgba(255,255,255,.08);">🔗 เชื่อมต่อ Google Sheets</button>
+      <div class="user" id="googleStatus" style="font-size:12px;color:#9FB2B8;"></div>
       <div class="user" id="topUser">admin</div>
       <button class="logout-btn" onclick="doLogout()">ออกจากระบบ</button>
     </div>
@@ -401,24 +406,67 @@ function initGoogleAuth(){
   if(!window.google || !google.accounts){ setTimeout(initGoogleAuth, 400); return; }
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/spreadsheets',
-    callback: (resp)=>{
+    scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
+    callback: async (resp)=>{
       if(resp && resp.access_token){
         googleAccessToken = resp.access_token;
-        const btn = document.getElementById('googleConnBtn');
-        if(btn){ btn.textContent = '✓ เชื่อมต่อ Google Sheets แล้ว'; btn.style.background = 'rgba(63,125,88,.35)'; }
+        setGoogleStatus(true);
+        scheduleSilentRenew();
+        if(pendingGoogleLogin){
+          pendingGoogleLogin = false;
+          const btn = document.getElementById('googleLoginBtn');
+          try{
+            const email = await fetchGoogleEmail();
+            enterApp(email || 'Google');
+          }catch(e){
+            enterApp('Google');
+          } finally {
+            if(btn){ btn.textContent = 'เข้าสู่ระบบด้วย Google'; btn.disabled = false; }
+          }
+        }
       }
     },
     error_callback: (err)=>{
       console.error('google auth error', err);
-      alert('เชื่อมต่อ Google ไม่สำเร็จ: '+(err && err.type ? err.type : 'ไม่ทราบสาเหตุ'));
+      const btn = document.getElementById('googleLoginBtn');
+      if(btn){ btn.textContent = 'เข้าสู่ระบบด้วย Google'; btn.disabled = false; }
+      if(pendingGoogleLogin){
+        pendingGoogleLogin = false;
+        document.getElementById('loginError').textContent = 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ — ตรวจสอบว่าอีเมลนี้ได้รับสิทธิ์ไว้แล้ว';
+      }
     }
   });
 }
 window.addEventListener('load', initGoogleAuth);
-function connectGoogle(){
+
+let pendingGoogleLogin = false;
+function loginWithGoogle(){
   if(!tokenClient){ alert('ระบบยืนยันตัวตน Google ยังโหลดไม่เสร็จ ลองอีกครั้งใน 2-3 วินาที'); return; }
-  tokenClient.requestAccessToken();
+  pendingGoogleLogin = true;
+  const btn = document.getElementById('googleLoginBtn');
+  if(btn){ btn.textContent = 'กำลังเชื่อมต่อ...'; btn.disabled = true; }
+  tokenClient.requestAccessToken({prompt:'consent'});
+}
+async function fetchGoogleEmail(){
+  const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers:{ 'Authorization':'Bearer '+googleAccessToken }
+  });
+  if(!resp.ok) return null;
+  const data = await resp.json();
+  return data.email || null;
+}
+function setGoogleStatus(connected){
+  const el = document.getElementById('googleStatus');
+  if(el) el.textContent = connected ? '🔗 Google Sheets เชื่อมต่ออยู่' : '';
+}
+let renewTimer = null;
+function scheduleSilentRenew(){
+  if(renewTimer) clearInterval(renewTimer);
+  renewTimer = setInterval(()=>{
+    if(tokenClient && googleAccessToken){
+      tokenClient.requestAccessToken({prompt:''});
+    }
+  }, 45*60*1000);
 }
 async function appendRecordToSheet(record){
   if(!googleAccessToken) return; // not connected — silently skip, Firestore save already succeeded
@@ -561,9 +609,12 @@ function doLogout(){
   document.getElementById('screen-app').classList.remove('active');
   document.getElementById('screen-login').classList.add('active');
   document.getElementById('loginPass').value='';
+  if(renewTimer){ clearInterval(renewTimer); renewTimer=null; }
+  googleAccessToken = null;
+  setGoogleStatus(false);
 }
-function enterApp(){
-  document.getElementById('topUser').textContent = auth.user;
+function enterApp(displayName){
+  document.getElementById('topUser').textContent = displayName || auth.user;
   document.getElementById('screen-login').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
   refreshAllDropdowns();
