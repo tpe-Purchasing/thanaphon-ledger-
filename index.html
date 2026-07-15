@@ -468,6 +468,30 @@ function scheduleSilentRenew(){
     }
   }, 45*60*1000);
 }
+async function getSheetProperties(){
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`;
+  const resp = await fetch(url, { headers:{ 'Authorization':'Bearer '+googleAccessToken } });
+  const text = await resp.text();
+  if(!resp.ok) throw new Error('อ่านข้อมูลชีทไม่สำเร็จ (สถานะ '+resp.status+'): '+text);
+  const data = JSON.parse(text);
+  const sheet = (data.sheets||[]).find(s=>s.properties.title===SHEET_NAME);
+  if(!sheet) throw new Error('ไม่พบแท็บชื่อ "'+SHEET_NAME+'" ในไฟล์นี้');
+  return sheet.properties;
+}
+async function ensureGridRows(sheetId, currentRowCount, neededRows){
+  if(neededRows <= currentRowCount) return;
+  const extra = neededRows - currentRowCount + 20; // small buffer so we don't hit this every single time
+  console.log('[SheetSync] expanding grid by', extra, 'rows');
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`;
+  const resp = await fetch(url, {
+    method:'POST',
+    headers:{ 'Authorization':'Bearer '+googleAccessToken, 'Content-Type':'application/json' },
+    body: JSON.stringify({ requests:[{ appendDimension:{ sheetId, dimension:'ROWS', length: extra } }] })
+  });
+  const text = await resp.text();
+  console.log('[SheetSync] grid expand status', resp.status, text);
+  if(!resp.ok) throw new Error('ขยายจำนวนแถวในชีทไม่สำเร็จ (สถานะ '+resp.status+'): '+text);
+}
 async function appendRecordToSheet(record){
   console.log('[SheetSync] googleAccessToken present?', !!googleAccessToken);
   if(!googleAccessToken){
@@ -486,6 +510,9 @@ async function appendRecordToSheet(record){
   const totalRows = (colAData.values || []).length;
   const targetRow = totalRows + 1; // write immediately after the true last used row
   console.log('[SheetSync] totalRows(colA)=', totalRows, '-> targetRow=', targetRow);
+
+  const sheetProps = await getSheetProperties();
+  await ensureGridRows(sheetProps.sheetId, sheetProps.gridProperties.rowCount, targetRow);
 
   const writeRange = encodeURIComponent(SHEET_NAME) + `!A${targetRow}:H${targetRow}`;
   const putUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${writeRange}?valueInputOption=USER_ENTERED`;
