@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
   --ink:#1B2430; --ink-soft:#5B6572; --ink-faint:#8B95A0;
@@ -184,6 +185,7 @@ tr:hover td{background:#FAFBFB;}
       </div>
     </div>
     <div class="topbar-right">
+      <button class="logout-btn" id="googleConnBtn" onclick="connectGoogle()" style="background:rgba(255,255,255,.08);">🔗 เชื่อมต่อ Google Sheets</button>
       <div class="user" id="topUser">admin</div>
       <button class="logout-btn" onclick="doLogout()">ออกจากระบบ</button>
     </div>
@@ -387,6 +389,55 @@ const db = firebase.firestore();
 const metaRef = db.collection('ledgerMeta').doc('config');
 const counterRef = db.collection('ledgerMeta').doc('counter');
 const recordsCol = db.collection('ledgerRecords');
+
+/* ===================== GOOGLE SHEETS WRITE-BACK (client-side OAuth, no secret) ===================== */
+const GOOGLE_CLIENT_ID = '477267489341-adhbgidb9nqb3731qsh7te0acoarojpq.apps.googleusercontent.com';
+const SPREADSHEET_ID = '1ehuHxujZLXE6iHGK1uoMaczjDEWk_JOWEwKv5QJpHdo';
+const SHEET_NAME = 'บันทึกรายการ';
+let googleAccessToken = null;
+let tokenClient = null;
+
+function initGoogleAuth(){
+  if(!window.google || !google.accounts){ setTimeout(initGoogleAuth, 400); return; }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    callback: (resp)=>{
+      if(resp && resp.access_token){
+        googleAccessToken = resp.access_token;
+        const btn = document.getElementById('googleConnBtn');
+        if(btn){ btn.textContent = '✓ เชื่อมต่อ Google Sheets แล้ว'; btn.style.background = 'rgba(63,125,88,.35)'; }
+      }
+    },
+    error_callback: (err)=>{
+      console.error('google auth error', err);
+      alert('เชื่อมต่อ Google ไม่สำเร็จ: '+(err && err.type ? err.type : 'ไม่ทราบสาเหตุ'));
+    }
+  });
+}
+window.addEventListener('load', initGoogleAuth);
+function connectGoogle(){
+  if(!tokenClient){ alert('ระบบยืนยันตัวตน Google ยังโหลดไม่เสร็จ ลองอีกครั้งใน 2-3 วินาที'); return; }
+  tokenClient.requestAccessToken();
+}
+async function appendRecordToSheet(record){
+  if(!googleAccessToken) return; // not connected — silently skip, Firestore save already succeeded
+  const range = encodeURIComponent(SHEET_NAME) + '!A:H';
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  const body = { values: [[
+    record.no, isoToBe(record.docDate), record.company, record.docNo,
+    !!record.isInvoice, !!record.isCopy, record.note||'', isoToBe(record.sentDate)
+  ]] };
+  const resp = await fetch(url, {
+    method:'POST',
+    headers:{ 'Authorization':'Bearer '+googleAccessToken, 'Content-Type':'application/json' },
+    body: JSON.stringify(body)
+  });
+  if(!resp.ok){
+    const errText = await resp.text();
+    throw new Error('เขียนกลับ Google Sheets ไม่สำเร็จ (สถานะ '+resp.status+') — อาจต้องกด "เชื่อมต่อ Google Sheets" ใหม่อีกครั้ง');
+  }
+}
 
 /* ===================== SEED DATA ===================== */
 const DEFAULT_COMPANIES = ["ทีเอเอสไอ","อัยธนา","ลีแอนด์สตีล","บำรุงรักษ์1993","เหล็กใต้","สินสว่างการไฟฟ้า",
@@ -624,7 +675,13 @@ async function saveRecord(){
     await recordsCol.doc(editingId).update(data);
   } else {
     const no = await nextNo();
-    await recordsCol.add({no, ...data});
+    const newRecord = {no, ...data};
+    await recordsCol.add(newRecord);
+    try{
+      await appendRecordToSheet(newRecord);
+    }catch(err){
+      alert('บันทึกในเว็บสำเร็จ แต่ '+err.message);
+    }
   }
   closeRecordModal();
 }
