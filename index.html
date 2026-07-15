@@ -469,22 +469,30 @@ function scheduleSilentRenew(){
   }, 45*60*1000);
 }
 async function appendRecordToSheet(record){
-  if(!googleAccessToken) return; // not connected — silently skip, Firestore save already succeeded
+  console.log('[SheetSync] googleAccessToken present?', !!googleAccessToken);
+  if(!googleAccessToken){
+    throw new Error('ยังไม่ได้เชื่อมต่อ Google Sheets (ต้องเข้าสู่ระบบด้วย Google)');
+  }
   const range = encodeURIComponent(SHEET_NAME) + '!A:H';
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   const body = { values: [[
     record.no, isoToBe(record.docDate), record.company, record.docNo,
     !!record.isInvoice, !!record.isCopy, record.note||'', isoToBe(record.sentDate)
   ]] };
+  console.log('[SheetSync] POST', url);
+  console.log('[SheetSync] body', JSON.stringify(body));
   const resp = await fetch(url, {
     method:'POST',
     headers:{ 'Authorization':'Bearer '+googleAccessToken, 'Content-Type':'application/json' },
     body: JSON.stringify(body)
   });
+  console.log('[SheetSync] response status', resp.status);
+  const respText = await resp.text();
+  console.log('[SheetSync] response body', respText);
   if(!resp.ok){
-    const errText = await resp.text();
-    throw new Error('เขียนกลับ Google Sheets ไม่สำเร็จ (สถานะ '+resp.status+') — อาจต้องกด "เชื่อมต่อ Google Sheets" ใหม่อีกครั้ง');
+    throw new Error('เขียนกลับ Google Sheets ไม่สำเร็จ (สถานะ '+resp.status+'): '+respText);
   }
+  console.log('[SheetSync] success, appended range:', JSON.parse(respText).updates && JSON.parse(respText).updates.updatedRange);
 }
 
 /* ===================== SEED DATA ===================== */
@@ -561,22 +569,8 @@ function listenRecords(){
 async function updateMeta(partial){
   await metaRef.set(partial, {merge:true});
 }
-async function nextNo(){
-  return db.runTransaction(async tx=>{
-    const snap = await tx.get(counterRef);
-    const last = snap.exists ? (snap.data().lastNo||0) : 0;
-    const next = last+1;
-    tx.set(counterRef, {lastNo:next});
-    return next;
-  });
-}
-async function reserveNoBlock(count){
-  return db.runTransaction(async tx=>{
-    const snap = await tx.get(counterRef);
-    const last = snap.exists ? (snap.data().lastNo||0) : 0;
-    tx.set(counterRef, {lastNo:last+count});
-    return last;
-  });
+function nextNo(){
+  return records.reduce((m,r)=>Math.max(m,r.no),0) + 1;
 }
 
 /* ===================== DATE HELPERS ===================== */
@@ -725,12 +719,13 @@ async function saveRecord(){
   if(editingId){
     await recordsCol.doc(editingId).update(data);
   } else {
-    const no = await nextNo();
+    const no = nextNo();
     const newRecord = {no, ...data};
     await recordsCol.add(newRecord);
     try{
       await appendRecordToSheet(newRecord);
     }catch(err){
+      console.error('[SheetSync] failed:', err);
       alert('บันทึกในเว็บสำเร็จ แต่ '+err.message);
     }
   }
@@ -790,8 +785,8 @@ async function importParsedRows(rows){
     alert(skippedDupe>0 ? `ไม่มีรายการใหม่ (ข้ามรายการซ้ำ ${skippedDupe} รายการ)` : 'ไม่พบข้อมูลที่นำเข้าได้ ตรวจสอบว่าคัดลอก/ดึงมาถูกคอลัมน์');
     return;
   }
-  const counterSnap = await counterRef.get();
-  let runningNo = Math.max(maxSeenNo, counterSnap.exists ? (counterSnap.data().lastNo||0) : 0);
+  const runningStart = Math.max(maxSeenNo, records.reduce((m,r)=>Math.max(m,r.no),0));
+  let runningNo = runningStart;
   const batch = db.batch();
   parsed.forEach(p=>{
     const {no, ...rest} = p;
@@ -801,8 +796,6 @@ async function importParsedRows(rows){
     if(!companies.includes(p.company)) companies.push(p.company);
     if(p.note && !noteTypes.includes(p.note)) noteTypes.push(p.note);
   });
-  const finalMax = Math.max(runningNo, maxSeenNo, counterSnap.exists?(counterSnap.data().lastNo||0):0);
-  batch.set(counterRef, {lastNo: finalMax});
   await batch.commit();
   await updateMeta({companies, noteTypes});
   let msg = `นำเข้าข้อมูลสำเร็จ ${parsed.length} รายการ (เรียงลำดับตามชีทต้นฉบับ)`;
