@@ -150,6 +150,48 @@ tr:hover td{background:#FAFBFB;}
 }
 .footer-hint{color:var(--ink-faint);font-size:12px;margin-top:30px;text-align:center;}
 .sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;}
+
+/* Dashboard */
+.dash-grid-2{display:grid;grid-template-columns:1.6fr 1fr;gap:20px;}
+@media (max-width:900px){.dash-grid-2{grid-template-columns:1fr;}}
+.dash-card-title{margin:0 0 16px;font-size:16px;color:var(--ink);}
+.stat-trend{font-size:12px;font-weight:600;margin-top:4px;}
+.stat-trend.up{color:var(--green);}
+.stat-trend.down{color:var(--red);}
+.stat-trend.flat{color:var(--ink-faint);}
+
+.bar-chart{display:flex;align-items:flex-end;gap:14px;height:200px;padding-top:10px;}
+.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:8px;}
+.bar-col .bar{width:100%;max-width:44px;background:linear-gradient(180deg,var(--navy),var(--navy-dark));border-radius:8px 8px 3px 3px;position:relative;min-height:4px;}
+.bar-col .bar-value{font-family:'Kanit';font-weight:700;font-size:13px;color:var(--navy-dark);}
+.bar-col .bar-label{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+
+.donut-wrap{display:flex;align-items:center;gap:22px;flex-wrap:wrap;justify-content:center;}
+.donut{width:150px;height:150px;border-radius:50%;position:relative;flex:0 0 auto;}
+.donut::after{content:'';position:absolute;inset:22px;background:var(--panel);border-radius:50%;}
+.donut-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:2;}
+.donut-center .n{font-family:'Kanit';font-weight:800;font-size:22px;color:var(--navy-dark);}
+.donut-center .l{font-size:11px;color:var(--ink-soft);}
+.donut-legend{display:flex;flex-direction:column;gap:8px;font-size:13px;}
+.donut-legend .row{display:flex;align-items:center;gap:8px;}
+.donut-legend .dot{width:10px;height:10px;border-radius:3px;flex:0 0 auto;}
+.donut-legend .lbl{color:var(--ink-soft);}
+.donut-legend .val{font-weight:700;margin-left:auto;font-family:'Kanit';}
+
+.top-co-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.top-co-rank{width:22px;height:22px;border-radius:50%;background:var(--navy-tint);color:var(--navy-dark);font-family:'Kanit';font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+.top-co-info{flex:1;min-width:0;}
+.top-co-name{font-weight:600;font-size:14px;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.top-co-bar-bg{background:var(--navy-tint);border-radius:6px;height:8px;overflow:hidden;}
+.top-co-bar-fill{background:var(--navy);height:100%;border-radius:6px;}
+.top-co-count{font-family:'Kanit';font-weight:700;color:var(--navy-dark);font-size:14px;width:36px;text-align:right;flex:0 0 auto;}
+
+.recent-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;}
+.recent-row:last-child{border-bottom:none;}
+.recent-row .rc-name{font-weight:600;}
+.recent-row .rc-meta{color:var(--ink-soft);}
+
+.admin-only.hidden-role{display:none !important;}
 </style>
 </head>
 <body>
@@ -197,15 +239,44 @@ tr:hover td{background:#FAFBFB;}
   </div>
 
   <div class="tabbar no-print">
-    <button class="tab-btn active" data-tab="ledger" onclick="switchTab('ledger')">📒 บันทึกรายการ</button>
+    <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">📊 แดชบอร์ด</button>
+    <button class="tab-btn" data-tab="ledger" onclick="switchTab('ledger')">📒 บันทึกรายการ</button>
     <button class="tab-btn" data-tab="submit" onclick="switchTab('submit')">📤 ส่งบัญชี</button>
     <button class="tab-btn" data-tab="backend" onclick="switchTab('backend')">⚙️ ข้อมูลหลังบ้าน</button>
   </div>
 
   <div class="content">
 
+    <!-- ===== TAB: DASHBOARD ===== -->
+    <div id="pane-dashboard" class="pane">
+      <div class="panel-title-row">
+        <div><h2>แดชบอร์ด</h2><p>ภาพรวมข้อมูลเอกสารทั้งหมด อัปเดตเรียลไทม์</p></div>
+      </div>
+      <div class="stat-row" id="dashKpis"></div>
+      <div class="dash-grid-2">
+        <div class="card">
+          <h3 class="dash-card-title">ปริมาณเอกสารรายเดือน (6 เดือนล่าสุด)</h3>
+          <div id="monthlyChart" class="bar-chart"></div>
+        </div>
+        <div class="card">
+          <h3 class="dash-card-title">สัดส่วนประเภทเอกสาร</h3>
+          <div id="typeDonut" class="donut-wrap"></div>
+        </div>
+      </div>
+      <div class="dash-grid-2" style="margin-top:20px;">
+        <div class="card">
+          <h3 class="dash-card-title">บริษัทที่ส่งเอกสารมากที่สุด</h3>
+          <div id="topCompanies"></div>
+        </div>
+        <div class="card">
+          <h3 class="dash-card-title">รายการล่าสุด</h3>
+          <div id="recentList"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== TAB: LEDGER ===== -->
-    <div id="pane-ledger" class="pane">
+    <div id="pane-ledger" class="pane" style="display:none;">
       <div class="stat-row">
         <div class="stat-card"><div class="stat-num" id="statTotal">0</div><div class="stat-label">รายการทั้งหมด</div></div>
         <div class="stat-card gold"><div class="stat-num" id="statMonth">0</div><div class="stat-label">เดือนนี้</div></div>
@@ -322,17 +393,16 @@ tr:hover td{background:#FAFBFB;}
         </div>
       </div>
 
-      <div class="card" style="margin-top:20px;">
+      <div class="card admin-only" style="margin-top:20px;">
         <h3 style="margin-top:0;">บัญชีผู้ใช้งาน (ใช้ร่วมกันทั้งบริษัท)</h3>
         <div class="form-grid">
           <div class="form-field"><label>ชื่อผู้ใช้ใหม่</label><input id="newUsername" placeholder="username"></div>
           <div class="form-field"><label>รหัสผ่านใหม่</label><input id="newPassword" type="password" placeholder="password"></div>
         </div>
         <button class="btn btn-navy btn-sm" style="margin-top:14px;" onclick="updateCreds()">บันทึกการเปลี่ยนแปลง</button>
-        <p class="import-note">หมายเหตุ: รหัสนี้เป็นเพียงด่านกันคนนอกเข้าใช้งานหน้าเว็บ ไม่ใช่ระบบความปลอดภัยระดับธนาคาร เหมาะกับใช้ภายในทีมที่ไว้ใจกัน</p>
       </div>
 
-      <div class="card" style="margin-top:20px;">
+      <div class="card admin-only" style="margin-top:20px;">
         <h3 style="margin-top:0;">สำรอง / กู้คืนข้อมูล</h3>
         <div class="btn-row">
           <button class="btn btn-outline btn-sm" onclick="backupJson()">ดาวน์โหลดไฟล์สำรองข้อมูล (JSON)</button>
@@ -341,7 +411,7 @@ tr:hover td{background:#FAFBFB;}
         </div>
       </div>
 
-      <div class="card" style="margin-top:20px;border-color:var(--red);">
+      <div class="card admin-only" style="margin-top:20px;border-color:var(--red);">
         <h3 style="margin-top:0;color:var(--red);">ลบข้อมูลทั้งหมด</h3>
         <p class="import-note">ลบรายการทั้งหมดในแท็บบันทึกรายการทิ้งทันที (ไม่กระทบรายชื่อบริษัท/ประเภทเอกสาร) ใช้ก่อนดึงข้อมูลจากชีทใหม่แบบสะอาดๆ — แนะนำให้กด "ดาวน์โหลดไฟล์สำรองข้อมูล" ก่อนเผื่อไว้</p>
         <button class="btn btn-sm" style="background:var(--red);color:#fff;" onclick="deleteAllRecords()">ลบรายการทั้งหมด</button>
@@ -417,8 +487,10 @@ function initGoogleAuth(){
           const btn = document.getElementById('googleLoginBtn');
           try{
             const email = await fetchGoogleEmail();
+            currentRole = 'staff';
             enterApp(email || 'Google');
           }catch(e){
+            currentRole = 'staff';
             enterApp('Google');
           } finally {
             if(btn){ btn.textContent = 'เข้าสู่ระบบด้วย Google'; btn.disabled = false; }
@@ -555,6 +627,13 @@ let noteTypes = DEFAULT_NOTETYPES.slice();
 let records = [];
 let editingId = null;
 let dataReady = false;
+let currentRole = 'staff'; // 'admin' via password login, 'staff' via Google login
+
+function applyRoleVisibility(){
+  document.querySelectorAll('.admin-only').forEach(el=>{
+    el.classList.toggle('hidden-role', currentRole !== 'admin');
+  });
+}
 
 /* ===================== BOOTSTRAP FIRESTORE ===================== */
 async function ensureSeedData(){
@@ -596,6 +675,7 @@ function listenRecords(){
     if(document.getElementById('screen-app').classList.contains('active')){
       renderLedger();
       renderSubmit();
+      renderDashboard();
     }
   });
 }
@@ -633,6 +713,7 @@ function doLogin(){
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value;
   if(u===auth.user && p===auth.pass){
+    currentRole = 'admin';
     enterApp();
   } else {
     document.getElementById('loginError').textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
@@ -650,6 +731,7 @@ function enterApp(displayName){
   document.getElementById('topUser').textContent = displayName || auth.user;
   document.getElementById('screen-login').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
+  applyRoleVisibility();
   refreshAllDropdowns();
   renderLedger();
   const t = todayIso();
@@ -657,14 +739,16 @@ function enterApp(displayName){
   document.getElementById('submitTo').value = t;
   renderSubmit();
   renderBackend();
+  switchTab('dashboard');
 }
 
 /* ===================== TABS ===================== */
 function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
-  ['ledger','submit','backend'].forEach(t=>{
+  ['dashboard','ledger','submit','backend'].forEach(t=>{
     document.getElementById('pane-'+t).style.display = (t===tab)?'block':'none';
   });
+  if(tab==='dashboard') renderDashboard();
 }
 
 /* ===================== DROPDOWNS ===================== */
@@ -675,6 +759,154 @@ function refreshAllDropdowns(){
   if(co) co.innerHTML = companies.map(c=>`<option value="${c}">`).join('');
   if(no) no.innerHTML = noteTypes.map(n=>`<option value="${n}">`).join('');
   if(nf) nf.innerHTML = '<option value="">ทุกประเภทเอกสาร</option>' + noteTypes.map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+
+/* ===================== DASHBOARD ===================== */
+const THAI_MONTHS_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const DONUT_COLORS = ['#16414F','#C99A3A','#3F7D58','#B23A32','#5B6572','#8B95A0','#2B6C7C'];
+
+function renderDashboard(){
+  const kpiEl = document.getElementById('dashKpis');
+  if(!kpiEl) return;
+  const total = records.length;
+
+  const now = new Date();
+  const thisYm = now.toISOString().slice(0,7);
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const lastYm = lastMonthDate.toISOString().slice(0,7);
+  const thisCount = records.filter(r=>r.docDate && r.docDate.startsWith(thisYm)).length;
+  const lastCount = records.filter(r=>r.docDate && r.docDate.startsWith(lastYm)).length;
+  let trendHtml = '<span class="stat-trend flat">ไม่มีข้อมูลเทียบ</span>';
+  if(lastCount>0){
+    const diffPct = Math.round(((thisCount-lastCount)/lastCount)*100);
+    if(diffPct>0) trendHtml = `<span class="stat-trend up">▲ ${diffPct}% จากเดือนที่แล้ว</span>`;
+    else if(diffPct<0) trendHtml = `<span class="stat-trend down">▼ ${Math.abs(diffPct)}% จากเดือนที่แล้ว</span>`;
+    else trendHtml = `<span class="stat-trend flat">เท่ากับเดือนที่แล้ว</span>`;
+  } else if(thisCount>0){
+    trendHtml = `<span class="stat-trend up">รายการใหม่ทั้งหมด</span>`;
+  }
+
+  const pending = records.filter(r=>!r.isInvoice && !r.isCopy).length;
+  const pendingPct = total>0 ? Math.round((pending/total)*100) : 0;
+
+  let lagSum=0, lagCount=0;
+  records.forEach(r=>{
+    if(r.docDate && r.sentDate){
+      const d1 = new Date(r.docDate), d2 = new Date(r.sentDate);
+      const diff = Math.round((d2-d1)/(1000*60*60*24));
+      if(Number.isFinite(diff) && diff>=0 && diff<365){ lagSum+=diff; lagCount++; }
+    }
+  });
+  const avgLag = lagCount>0 ? (lagSum/lagCount).toFixed(1) : '-';
+
+  kpiEl.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-num">${total}</div>
+      <div class="stat-label">รายการทั้งหมด</div>
+    </div>
+    <div class="stat-card gold">
+      <div class="stat-num">${thisCount}</div>
+      <div class="stat-label">เดือนนี้</div>
+      ${trendHtml}
+    </div>
+    <div class="stat-card green">
+      <div class="stat-num">${pending}</div>
+      <div class="stat-label">ยังไม่ทำเครื่องหมาย ✓ (${pendingPct}%)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">${avgLag}</div>
+      <div class="stat-label">วันเฉลี่ย เอกสาร → นำส่งบัญชี</div>
+    </div>
+  `;
+
+  renderMonthlyChart();
+  renderTypeDonut();
+  renderTopCompanies();
+  renderRecentList();
+}
+
+function renderMonthlyChart(){
+  const el = document.getElementById('monthlyChart');
+  if(!el) return;
+  const now = new Date();
+  const months = [];
+  for(let i=5;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    months.push({ ym: d.toISOString().slice(0,7), label: THAI_MONTHS_SHORT[d.getMonth()] });
+  }
+  const counts = months.map(m => records.filter(r=>r.docDate && r.docDate.startsWith(m.ym)).length);
+  const max = Math.max(...counts, 1);
+  el.innerHTML = months.map((m,i)=>{
+    const h = Math.max(4, Math.round((counts[i]/max)*160));
+    return `<div class="bar-col">
+      <div class="bar-value">${counts[i]}</div>
+      <div class="bar" style="height:${h}px;"></div>
+      <div class="bar-label">${m.label}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderTypeDonut(){
+  const el = document.getElementById('typeDonut');
+  if(!el) return;
+  const counts = {};
+  records.forEach(r=>{
+    const key = (r.note && r.note.trim()) ? r.note.trim() : 'ไม่ระบุ';
+    counts[key] = (counts[key]||0)+1;
+  });
+  const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const total = records.length || 1;
+  let acc = 0;
+  const stops = entries.map(([k,v],i)=>{
+    const start = acc;
+    acc += (v/total)*100;
+    return `${DONUT_COLORS[i % DONUT_COLORS.length]} ${start}% ${acc}%`;
+  }).join(', ');
+  const legend = entries.slice(0,6).map(([k,v],i)=>`
+    <div class="row">
+      <span class="dot" style="background:${DONUT_COLORS[i % DONUT_COLORS.length]};"></span>
+      <span class="lbl">${k}</span>
+      <span class="val">${v}</span>
+    </div>`).join('');
+  el.innerHTML = `
+    <div class="donut" style="background:conic-gradient(${stops || '#E1E5E3 0% 100%'});">
+      <div class="donut-center"><div class="n">${records.length}</div><div class="l">เอกสาร</div></div>
+    </div>
+    <div class="donut-legend">${legend}</div>
+  `;
+}
+
+function renderTopCompanies(){
+  const el = document.getElementById('topCompanies');
+  if(!el) return;
+  const counts = {};
+  records.forEach(r=>{ counts[r.company] = (counts[r.company]||0)+1; });
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  if(top.length===0){ el.innerHTML = '<p style="color:var(--ink-faint);font-size:14px;">ยังไม่มีข้อมูล</p>'; return; }
+  const max = top[0][1];
+  el.innerHTML = top.map(([name,count],i)=>`
+    <div class="top-co-row">
+      <div class="top-co-rank">${i+1}</div>
+      <div class="top-co-info">
+        <div class="top-co-name">${name}</div>
+        <div class="top-co-bar-bg"><div class="top-co-bar-fill" style="width:${(count/max)*100}%;"></div></div>
+      </div>
+      <div class="top-co-count">${count}</div>
+    </div>
+  `).join('');
+}
+
+function renderRecentList(){
+  const el = document.getElementById('recentList');
+  if(!el) return;
+  const recent = [...records].sort((a,b)=>b.no-a.no).slice(0,10);
+  if(recent.length===0){ el.innerHTML = '<p style="color:var(--ink-faint);font-size:14px;">ยังไม่มีข้อมูล</p>'; return; }
+  el.innerHTML = recent.map(r=>`
+    <div class="recent-row">
+      <div><div class="rc-name">${r.company}</div><div class="rc-meta">${r.docNo||'-'}</div></div>
+      <div class="rc-meta">#${r.no} · ${isoToBe(r.docDate)}</div>
+    </div>
+  `).join('');
 }
 
 /* ===================== LEDGER RENDER ===================== */
