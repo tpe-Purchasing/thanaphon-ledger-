@@ -192,6 +192,8 @@ tr:hover td{background:#FAFBFB;}
 .recent-row .rc-meta{color:var(--ink-soft);}
 
 .admin-only.hidden-role{display:none !important;}
+body.role-restricted-ledger .ledger-edit-only,
+body.role-restricted-ledger .row-actions{display:none !important;}
 </style>
 </head>
 <body>
@@ -284,7 +286,7 @@ tr:hover td{background:#FAFBFB;}
 
       <div class="panel-title-row">
         <div><h2>บันทึกรายการ</h2><p>บันทึกเอกสารรับเข้าต่อเนื่อง ข้อมูลซิงค์ทุกเครื่องแบบเรียลไทม์</p></div>
-        <div class="btn-row no-print">
+        <div class="btn-row no-print ledger-edit-only">
           <button class="btn btn-outline" onclick="toggleImport()">นำเข้าข้อมูล</button>
           <button class="btn btn-outline" onclick="exportCsv()">ส่งออก CSV</button>
           <button class="btn btn-gold" onclick="openRecordModal()">+ เพิ่มรายการ</button>
@@ -393,6 +395,21 @@ tr:hover td{background:#FAFBFB;}
       </div>
 
       <div class="card admin-only" style="margin-top:20px;">
+        <h3 style="margin-top:0;">จัดการสิทธิ์ผู้ใช้ (Google)</h3>
+        <p class="import-note">อีเมล Google ที่ไม่อยู่ในรายชื่อนี้จะเข้าระบบไม่ได้ กำหนดบทบาทให้แต่ละคนตามหน้าที่จริง</p>
+        <div id="roleList" style="margin:14px 0;"></div>
+        <div class="add-row-form no-print">
+          <input class="small-input" id="newRoleEmail" placeholder="อีเมล Google เช่น name@gmail.com" style="flex:2;min-width:200px;">
+          <select class="small-input" id="newRoleValue" style="flex:1;min-width:160px;">
+            <option value="manager">หัวหน้า/ผู้จัดการ</option>
+            <option value="purchasing">จัดซื้อ</option>
+            <option value="intake">รับเอกสาร/บัญชี</option>
+          </select>
+          <button class="btn btn-navy" style="width:auto;padding:10px 18px;" onclick="addRole()">+ เพิ่มสิทธิ์</button>
+        </div>
+      </div>
+
+      <div class="card admin-only" style="margin-top:20px;">
         <h3 style="margin-top:0;">บัญชีผู้ใช้งาน (ใช้ร่วมกันทั้งบริษัท)</h3>
         <div class="form-grid">
           <div class="form-field"><label>ชื่อผู้ใช้ใหม่</label><input id="newUsername" placeholder="username"></div>
@@ -462,7 +479,10 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const metaRef = db.collection('ledgerMeta').doc('config');
 const counterRef = db.collection('ledgerMeta').doc('counter');
+const rolesRef = db.collection('ledgerMeta').doc('roles');
 const recordsCol = db.collection('ledgerRecords');
+const ROLE_LABELS = { manager:'หัวหน้า/ผู้จัดการ', purchasing:'จัดซื้อ', intake:'รับเอกสาร/บัญชี' };
+let userRoles = {}; // { email: 'manager'|'purchasing'|'intake' }
 
 /* ===================== GOOGLE SHEETS WRITE-BACK (client-side OAuth, no secret) ===================== */
 const GOOGLE_CLIENT_ID = '477267489341-adhbgidb9nqb3731qsh7te0acoarojpq.apps.googleusercontent.com';
@@ -486,11 +506,17 @@ function initGoogleAuth(){
           const btn = document.getElementById('googleLoginBtn');
           try{
             const email = await fetchGoogleEmail();
-            currentRole = 'staff';
-            enterApp(email || 'Google');
+            const role = email ? userRoles[email.toLowerCase()] : null;
+            if(!role){
+              document.getElementById('loginError').textContent = 'บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน กรุณาติดต่อผู้ดูแลระบบ (' + (email||'ไม่ทราบอีเมล') + ')';
+              googleAccessToken = null;
+              setGoogleStatus(false);
+            } else {
+              currentRole = role;
+              enterApp(email);
+            }
           }catch(e){
-            currentRole = 'staff';
-            enterApp('Google');
+            document.getElementById('loginError').textContent = 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ ลองอีกครั้ง';
           } finally {
             if(btn){ btn.textContent = 'เข้าสู่ระบบด้วย Google'; btn.disabled = false; }
           }
@@ -626,12 +652,18 @@ let noteTypes = DEFAULT_NOTETYPES.slice();
 let records = [];
 let editingId = null;
 let dataReady = false;
-let currentRole = 'staff'; // 'admin' via password login, 'staff' via Google login
+let currentRole = null; // 'admin' | 'manager' | 'purchasing' | 'intake'
 
 function applyRoleVisibility(){
+  const fullAccess = (currentRole === 'admin' || currentRole === 'manager');
   document.querySelectorAll('.admin-only').forEach(el=>{
-    el.classList.toggle('hidden-role', currentRole !== 'admin');
+    el.classList.toggle('hidden-role', !fullAccess);
   });
+  const isPurchasing = currentRole === 'purchasing';
+  document.querySelectorAll('[data-tab="submit"], [data-tab="backend"]').forEach(b=>{
+    b.style.display = isPurchasing ? 'none' : '';
+  });
+  document.body.classList.toggle('role-restricted-ledger', isPurchasing);
 }
 
 /* ===================== BOOTSTRAP FIRESTORE ===================== */
@@ -644,12 +676,24 @@ async function ensureSeedData(){
   if(!counterSnap.exists){
     await counterRef.set({lastNo:97});
   }
+  const rolesSnap = await rolesRef.get();
+  if(!rolesSnap.exists){
+    await rolesRef.set({ emails: {} });
+  }
   const recSnap = await recordsCol.limit(1).get();
   if(recSnap.empty){
     const batch = db.batch();
     DEFAULT_RECORDS.forEach(r=>{ batch.set(recordsCol.doc(), r); });
     await batch.commit();
   }
+}
+function listenRoles(){
+  rolesRef.onSnapshot(doc=>{
+    if(doc.exists){
+      userRoles = (doc.data() && doc.data().emails) || {};
+      if(document.getElementById('screen-app').classList.contains('active')) renderRoleList();
+    }
+  });
 }
 function listenMeta(){
   metaRef.onSnapshot(doc=>{
@@ -682,6 +726,7 @@ function listenRecords(){
   try{ await ensureSeedData(); }catch(e){ console.error('seed error', e); }
   listenMeta();
   listenRecords();
+  listenRoles();
 })();
 
 async function updateMeta(partial){
@@ -758,6 +803,31 @@ function refreshAllDropdowns(){
   if(co) co.innerHTML = companies.map(c=>`<option value="${c}">`).join('');
   if(no) no.innerHTML = noteTypes.map(n=>`<option value="${n}">`).join('');
   if(nf) nf.innerHTML = '<option value="">ทุกประเภทเอกสาร</option>' + noteTypes.map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+
+function renderRoleList(){
+  const el = document.getElementById('roleList');
+  if(!el) return;
+  const entries = Object.entries(userRoles);
+  if(entries.length===0){ el.innerHTML = '<p style="color:var(--ink-faint);font-size:14px;">ยังไม่มีใครได้รับสิทธิ์ (นอกจากแอดมิน)</p>'; return; }
+  el.innerHTML = entries.map(([email,role])=>`
+    <div class="manage-row">
+      <div class="grow">${email}</div>
+      <div style="color:var(--ink-soft);font-size:13px;">${ROLE_LABELS[role]||role}</div>
+      <button class="del-x" onclick="removeRole('${email.replace(/'/g,"\\'")}')">✕</button>
+    </div>`).join('');
+}
+async function addRole(){
+  const emailInput = document.getElementById('newRoleEmail').value.trim().toLowerCase();
+  const role = document.getElementById('newRoleValue').value;
+  if(!emailInput || !emailInput.includes('@')){ alert('กรอกอีเมล Google ให้ถูกต้อง'); return; }
+  userRoles[emailInput] = role;
+  await rolesRef.set({ emails: userRoles }, {merge:true});
+  document.getElementById('newRoleEmail').value = '';
+}
+async function removeRole(email){
+  delete userRoles[email];
+  await rolesRef.set({ emails: userRoles });
 }
 
 /* ===================== DASHBOARD ===================== */
@@ -1194,6 +1264,7 @@ function renderBackend(){
     `<span class="chip">${c}<button onclick="removeCompany('${c.replace(/'/g,"\\'")}')">✕</button></span>`).join('');
   document.getElementById('noteChips').innerHTML = noteTypes.map(n=>
     `<span class="chip">${n}<button onclick="removeNoteType('${n.replace(/'/g,"\\'")}')">✕</button></span>`).join('');
+  renderRoleList();
 }
 async function addCompany(){
   const v = document.getElementById('newCompany').value.trim();
