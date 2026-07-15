@@ -473,26 +473,38 @@ async function appendRecordToSheet(record){
   if(!googleAccessToken){
     throw new Error('ยังไม่ได้เชื่อมต่อ Google Sheets (ต้องเข้าสู่ระบบด้วย Google)');
   }
-  const range = encodeURIComponent(SHEET_NAME) + '!A:H';
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  const colARange = encodeURIComponent(SHEET_NAME) + '!A:A';
+  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${colARange}`;
+  console.log('[SheetSync] GET (find true last row)', getUrl);
+  const getResp = await fetch(getUrl, { headers:{ 'Authorization':'Bearer '+googleAccessToken } });
+  const getText = await getResp.text();
+  console.log('[SheetSync] GET status', getResp.status, getText);
+  if(!getResp.ok){
+    throw new Error('อ่านจำนวนแถวในชีทไม่สำเร็จ (สถานะ '+getResp.status+'): '+getText);
+  }
+  const colAData = JSON.parse(getText);
+  const totalRows = (colAData.values || []).length;
+  const targetRow = totalRows + 1; // write immediately after the true last used row
+  console.log('[SheetSync] totalRows(colA)=', totalRows, '-> targetRow=', targetRow);
+
+  const writeRange = encodeURIComponent(SHEET_NAME) + `!A${targetRow}:H${targetRow}`;
+  const putUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${writeRange}?valueInputOption=USER_ENTERED`;
   const body = { values: [[
     record.no, isoToBe(record.docDate), record.company, record.docNo,
-    !!record.isInvoice, !!record.isCopy, record.note||'', isoToBe(record.sentDate)
+    record.isInvoice ? '✓' : '', record.isCopy ? '✓' : '', record.note||'', isoToBe(record.sentDate)
   ]] };
-  console.log('[SheetSync] POST', url);
-  console.log('[SheetSync] body', JSON.stringify(body));
-  const resp = await fetch(url, {
-    method:'POST',
+  console.log('[SheetSync] PUT', putUrl, JSON.stringify(body));
+  const putResp = await fetch(putUrl, {
+    method:'PUT',
     headers:{ 'Authorization':'Bearer '+googleAccessToken, 'Content-Type':'application/json' },
     body: JSON.stringify(body)
   });
-  console.log('[SheetSync] response status', resp.status);
-  const respText = await resp.text();
-  console.log('[SheetSync] response body', respText);
-  if(!resp.ok){
-    throw new Error('เขียนกลับ Google Sheets ไม่สำเร็จ (สถานะ '+resp.status+'): '+respText);
+  const putText = await putResp.text();
+  console.log('[SheetSync] PUT status', putResp.status, putText);
+  if(!putResp.ok){
+    throw new Error('เขียนกลับ Google Sheets ไม่สำเร็จ (สถานะ '+putResp.status+'): '+putText);
   }
-  console.log('[SheetSync] success, appended range:', JSON.parse(respText).updates && JSON.parse(respText).updates.updatedRange);
+  console.log('[SheetSync] success, wrote to row', targetRow);
 }
 
 /* ===================== SEED DATA ===================== */
